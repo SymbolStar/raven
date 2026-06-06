@@ -342,7 +342,6 @@ describe("Gap 3: Codex Responses tool type filtering", () => {
 
   test("deeply nested input does not cause stack overflow", () => {
     const s = makeCopilotResponses({ client: noopClient })
-    // Build a 50-level deep nested object — well past MAX_REWRITE_DEPTH (20)
     let deep: Record<string, unknown> = {
       type: "function_call",
       namespace: "mcp__teams__",
@@ -365,8 +364,65 @@ describe("Gap 3: Codex Responses tool type filtering", () => {
       ],
     } as unknown as ResponsesPayload
 
-    // Should complete without stack overflow
     const out = s.prepare(req, makeCtx())
     expect(out).toBeDefined()
+  })
+
+  test("flattens function_call nested inside a wrapper object in input", () => {
+    const s = makeCopilotResponses({ client: noopClient })
+    const req = {
+      model: "gpt-5.5",
+      input: [
+        {
+          wrapper: {
+            type: "function_call",
+            namespace: "mcp__teams__",
+            name: "ListChats",
+            arguments: "{}",
+            call_id: "call_nested",
+          },
+        },
+      ],
+      tools: [
+        {
+          type: "namespace",
+          name: "mcp__teams__",
+          tools: [{ type: "function", name: "ListChats", parameters: {} }],
+        },
+      ],
+    } as unknown as ResponsesPayload
+
+    const out = s.prepare(req, makeCtx())
+    const outInput = (out as Record<string, unknown>).input as Array<Record<string, unknown>>
+    const wrapper = outInput[0] as { wrapper: Record<string, unknown> }
+    expect(wrapper.wrapper).toMatchObject({
+      type: "function_call",
+      name: "mcp__teams__ListChats",
+    })
+    expect(wrapper.wrapper).not.toHaveProperty("namespace")
+  })
+
+  test("restores namespace in stream chunk with invalid JSON gracefully", () => {
+    const s = makeCopilotResponses({ client: noopClient })
+    const req = {
+      model: "gpt-5.5",
+      input: "hi",
+      stream: true,
+      tools: [
+        {
+          type: "namespace",
+          name: "mcp__teams__",
+          tools: [{ type: "function", name: "ListChats", parameters: {} }],
+        },
+      ],
+    } as unknown as ResponsesPayload
+    const prepared = s.prepare(req, makeCtx())
+    const state = s.initStreamState(prepared, makeCtx())
+    const out = s.adaptChunk(
+      { event: "response.text.delta", data: "not valid json{{{", id: null, retry: null },
+      state,
+      makeCtx(),
+    )
+    expect(String(out[0]!.data)).toBe("not valid json{{{")
   })
 })

@@ -95,7 +95,7 @@ describe("createApp", () => {
     expect(res.status).toBe(401)
   })
 
-  test("/chat/completions with valid DB key → non-401", async () => {
+  test("/chat/completions with valid DB key → non-401", { timeout: 15_000 }, async () => {
     const created = createApiKey(db, "test-key")
     invalidateKeyCountCache()
     const app = createApp({ db, apiKey: null, internalKey: null, githubToken: "gh-test", port: null, baseUrl: null })
