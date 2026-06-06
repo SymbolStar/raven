@@ -1,15 +1,6 @@
 // ---------------------------------------------------------------------------
-// strategies/copilot-responses.ts
-//
-// Promotes `routes/responses/handler.ts::copilotResponsesShim` onto the
-// canonical 7-method `Strategy` interface. Pure passthrough — no
-// translation. The composition root supplies the upstream client.
-//
-// `prepare` filters tool entries whose `type` is not accepted by Copilot
-// Responses. Codex MCP tools arrive as Responses `namespace` tools; Copilot
-// does not accept that wrapper, so Raven flattens namespace children and
-// matching function-call history into function tools before forwarding, then
-// restores the namespace on the way back.
+// strategies/copilot-responses.ts — Responses API passthrough with Codex
+// MCP namespace-tool flattening / restoration.
 // ---------------------------------------------------------------------------
 
 import type { SSEMessage } from "hono/streaming"
@@ -41,27 +32,17 @@ export interface CopilotResponsesStreamState {
 
 type NamespaceToolMapping = Map<string, { namespace: string; name: string }>
 
+// Keyed by the object identity of the prepared request returned from prepare().
+// Runner preserves this identity through dispatch → adaptJson / initStreamState.
 const namespaceToolMappings = new WeakMap<ResponsesPayload, NamespaceToolMapping>()
 
-/**
- * Tool types that the GitHub Copilot `/responses` endpoint accepts. Every
- * other built-in tool (image_generation, code_interpreter, file_search,
- * mcp, namespace, computer_use_preview, local_shell, ...) is rejected with
- * `"The requested tool <type> is not supported."`. Codex CLI registers
- * `image_generation` automatically on every request, so callers must be
- * prepared to silently filter unsupported types. Namespace tools are handled
- * specially before this allow-list is applied.
- */
+const MAX_REWRITE_DEPTH = 20
+
 export const COPILOT_SUPPORTED_TOOL_TYPES: ReadonlySet<string> = new Set([
   "function",
   "web_search_preview",
 ])
 
-/**
- * Convert Codex Responses tools into the subset accepted by Copilot. Namespace
- * children are flattened using Codex's display name convention, e.g.
- * `mcp__teams__` + `ListChats` => `mcp__teams__ListChats`.
- */
 function prepareResponsesTools(req: ResponsesPayload): ResponsesPayload {
   const tools = (req as { tools?: unknown }).tools
   const namespaceMapping: NamespaceToolMapping = new Map()
@@ -100,9 +81,6 @@ function prepareResponsesTools(req: ResponsesPayload): ResponsesPayload {
 
   if (!toolsChanged && !inputChanged) return req
 
-  // Drop the field entirely when nothing remains; some upstreams treat
-  // `tools: []` as "force no tools" which is a different semantic from
-  // "tools field absent".
   if (toolsChanged && filteredTools === undefined) {
     const { tools: _omit, ...rest } = req as Record<string, unknown>
     const prepared = {
@@ -145,11 +123,14 @@ function flattenNamespaceTool(
 function flattenNamespacedInputFunctionCalls(
   value: unknown,
   mapping: NamespaceToolMapping,
+  depth = 0,
 ): unknown {
+  if (depth > MAX_REWRITE_DEPTH) return value
+
   if (Array.isArray(value)) {
     let changed = false
     const next = value.map((item) => {
-      const rewritten = flattenNamespacedInputFunctionCalls(item, mapping)
+      const rewritten = flattenNamespacedInputFunctionCalls(item, mapping, depth + 1)
       if (rewritten !== item) changed = true
       return rewritten
     })
@@ -176,7 +157,7 @@ function flattenNamespacedInputFunctionCalls(
   }
 
   for (const [key, child] of Object.entries(next)) {
-    const rewritten = flattenNamespacedInputFunctionCalls(child, mapping)
+    const rewritten = flattenNamespacedInputFunctionCalls(child, mapping, depth + 1)
     if (rewritten !== child) {
       if (!changed) {
         next = { ...next }
@@ -213,11 +194,14 @@ function restoreNamespacedFunctionCalls(
 function rewriteNamespacedFunctionCalls(
   value: unknown,
   mapping: NamespaceToolMapping,
+  depth = 0,
 ): unknown {
+  if (depth > MAX_REWRITE_DEPTH) return value
+
   if (Array.isArray(value)) {
     let changed = false
     const next = value.map((item) => {
-      const rewritten = rewriteNamespacedFunctionCalls(item, mapping)
+      const rewritten = rewriteNamespacedFunctionCalls(item, mapping, depth + 1)
       if (rewritten !== item) changed = true
       return rewritten
     })
@@ -239,7 +223,7 @@ function rewriteNamespacedFunctionCalls(
   }
 
   for (const [key, child] of Object.entries(next)) {
-    const rewritten = rewriteNamespacedFunctionCalls(child, mapping)
+    const rewritten = rewriteNamespacedFunctionCalls(child, mapping, depth + 1)
     if (rewritten !== child) {
       if (!changed) {
         next = { ...next }

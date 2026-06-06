@@ -1,16 +1,5 @@
 /**
- * Regression tests for the Codex CLI <-> Copilot Responses API tool gap.
- *
- * mai-agents reference: litellm_patches/responses/litellm_completion_transformation/handler.py
- *   GithubCopilotResponsesAPIConfig._SUPPORTED_TOOL_TYPES = {"function", "web_search_preview"}
- *
- *   "Codex CLI registers built-in tools like image_generation on every
- *    request, so we must strip them before forwarding to Copilot.
- *    Otherwise: 'The requested tool <type> is not supported.'"
- *
- * Desired: strategy.prepare strips every unsupported tool type, leaves
- * `function` and `web_search_preview` untouched, and flattens Codex MCP
- * `namespace` tools into function tools that Copilot Responses accepts.
+ * Codex CLI <-> Copilot Responses API tool compatibility tests.
  */
 import { describe, expect, test } from "vitest"
 
@@ -314,12 +303,7 @@ describe("Gap 3: Codex Responses tool type filtering", () => {
     } as unknown as ResponsesPayload
 
     const out = s.prepare(req, makeCtx())
-    // After filtering everything out we must NOT send an empty tools array,
-    // since some upstreams interpret "tools: []" as "force no tools".
-    // Either omit the key entirely or set it to undefined / null.
-    const tools = (out as Record<string, unknown>).tools
-    expect(tools == null || (Array.isArray(tools) && tools.length === 0)).toBe(true)
-    if (Array.isArray(tools)) expect(tools).toHaveLength(0)
+    expect("tools" in (out as Record<string, unknown>)).toBe(false)
   })
 
   test("requests without a tools field are passed through unchanged", () => {
@@ -347,7 +331,6 @@ describe("Gap 3: Codex Responses tool type filtering", () => {
     } as unknown as ResponsesPayload
 
     s.prepare(req, makeCtx())
-    // Caller's array must still hold the original entries.
     expect(tools.map((t) => t.type)).toEqual([
       "image_generation",
       "namespace",
@@ -355,5 +338,35 @@ describe("Gap 3: Codex Responses tool type filtering", () => {
     ])
     const namespaceTool = tools[1] as { tools: Array<{ name: string }> }
     expect(namespaceTool.tools[0]!.name).toBe("ListChats")
+  })
+
+  test("deeply nested input does not cause stack overflow", () => {
+    const s = makeCopilotResponses({ client: noopClient })
+    // Build a 50-level deep nested object — well past MAX_REWRITE_DEPTH (20)
+    let deep: Record<string, unknown> = {
+      type: "function_call",
+      namespace: "mcp__teams__",
+      name: "ListChats",
+      arguments: "{}",
+      call_id: "deep",
+    }
+    for (let i = 0; i < 50; i++) {
+      deep = { nested: deep }
+    }
+    const req = {
+      model: "gpt-5.5",
+      input: [deep],
+      tools: [
+        {
+          type: "namespace",
+          name: "mcp__teams__",
+          tools: [{ type: "function", name: "ListChats", parameters: {} }],
+        },
+      ],
+    } as unknown as ResponsesPayload
+
+    // Should complete without stack overflow
+    const out = s.prepare(req, makeCtx())
+    expect(out).toBeDefined()
   })
 })
