@@ -1,5 +1,57 @@
 # Changelog
 
+## v2.3.1
+
+### Added
+- Add summary cards to Sessions page
+- Add summary cards to Clients page
+- Add summary cards to Models page
+- Respect prefers-reduced-motion (PG-Polish)
+- Add summary tiles to Copilot Models + Settings (PG-Visual)
+- Apply design system to Settings pages (DS-5)
+- Apply design system to Tools pages (DS-4)
+- Apply design system to Logs/Sessions/Models pages (DS-3)
+- Apply design system to Requests page (DS-3)
+- Apply design system to Overview page (DS-2 sample)
+- Typography utilities + chart primitives (DS-1)
+
+### Changed
+- Improve Responses namespace-tool coverage
+- Upgrade lint-staged 16.4.0 → 17.0.7
+- Upgrade vite 8.0.10 → 8.0.16
+- Upgrade vitest 4.1.6 → 4.1.8
+- Upgrade dependency-cruiser 17.4.0 → 17.4.3
+- Upgrade typescript-eslint 8.59.4 → 8.60.1
+- Upgrade eslint 10.4.0 → 10.4.1
+- Upgrade hono 4.12.19 → 4.12.23
+- Upgrade next to 16.2.7
+- Pass --ignore-scripts to bun install (Shai-Hulud defense)
+- Align eslint-config-next to 16.2.6
+- Upgrade next to 16.2.6
+- Enable L2 gate in CI and fix CVEs
+- Add test:l2 script and enable L2 gate in CI
+- Update proxy L1 test runner from bun:test to vitest
+- Enforce L1 coverage gate
+- Re-capture coverage baseline under vitest+istanbul
+- Switch coverage gate from bun test to vitest
+- Exclude legacy entry/shim files from coverage report
+- Add root vitest workspace config + test:root script
+- Migrate scripts/lib tests from bun:test to vitest
+- Migrate from bun:test to vitest with 95% coverage gate
+- Rewrite migration rule to match L2-default surface guidance
+- Dashboard design system rules
+
+### Fixed
+- Harden Responses namespace-tool rewriting
+- Support codex mcp tools in responses
+- Resolve translated model name against live Copilot catalog
+- Bump brace-expansion to 5.0.6 (GHSA-jxxr-4gwj-5jf2)
+- Lower routes threshold to 98.33% for vitest/istanbul delta
+- Align Requests table to canonical inline-table style
+- Use white L2 surface for stat cards + DashboardSegment
+- Purge removed border-border/40 and /60 tokens (Rule 4)
+- Unify table density + header tokens (DS-3 follow-up)
+
 ## v2.3.0
 
 ### Added
