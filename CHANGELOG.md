@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.3.2
+
+### Changed
+- Typescript 5.9.3 → 6.0.3
+- Recharts 2.15.4 → 3.8.1
+- Lucide-react 0.503.0 → 1.17.0
+- Hono 4.12.23 → 4.12.24
+- Bump vitest coverage 4.1.8 and react/node types
+- Radix-ui 1.4.3 → 1.5.0
+- React/react-dom 19.1.0 → 19.2.7
+
 ## v2.3.1
 
 ### Added
