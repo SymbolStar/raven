@@ -1,4 +1,4 @@
-import { Github } from "lucide-react";
+import { Github } from "@/components/icons/github";
 import { SidebarShell, MobileMenuButton } from "./sidebar-shell";
 import { ThemeToggle } from "./theme-toggle";
 import { Breadcrumbs } from "./breadcrumbs";

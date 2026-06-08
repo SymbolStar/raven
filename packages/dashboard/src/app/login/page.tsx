@@ -3,7 +3,8 @@
 import { signIn } from "next-auth/react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Suspense, useEffect } from "react";
-import { Github, Bird } from "lucide-react";
+import { Bird } from "lucide-react";
+import { Github } from "@/components/icons/github";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { useAuthConfig } from "@/hooks/use-auth-config";
 

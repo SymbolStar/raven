@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import {
   Monitor,
   Shield,
-  Github,
   Terminal,
   Key,
   Cable,
@@ -13,6 +12,7 @@ import {
   Rocket,
   ExternalLink,
 } from "lucide-react";
+import { Github } from "@/components/icons/github";
 import {
   Dialog,
   DialogContent,
