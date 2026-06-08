@@ -22,6 +22,7 @@ import {
   formatBucketTime,
   formatCompact,
   formatLatency,
+  getChartColor,
 } from "@/lib/chart-config";
 import {
   ChartTooltip,
@@ -189,8 +190,8 @@ function StreamSyncChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
           dataKey="stream_count"
           name="Stream"
           stackId="mode"
-          stroke={CHART_COLORS.palette[2]}
-          fill={CHART_COLORS.palette[2]}
+          stroke={getChartColor(2)}
+          fill={getChartColor(2)}
           fillOpacity={0.2}
           strokeWidth={2}
           {...ANIMATION_PROPS}
@@ -200,8 +201,8 @@ function StreamSyncChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
           dataKey="sync_count"
           name="Sync"
           stackId="mode"
-          stroke={CHART_COLORS.palette[5]}
-          fill={CHART_COLORS.palette[5]}
+          stroke={getChartColor(5)}
+          fill={getChartColor(5)}
           fillOpacity={0.2}
           strokeWidth={2}
           {...ANIMATION_PROPS}
@@ -274,7 +275,7 @@ function TtftChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
           type="monotone"
           dataKey="avg_ttft_ms"
           name="Avg TTFT"
-          stroke={CHART_COLORS.palette[3]}
+          stroke={getChartColor(3)}
           strokeWidth={2}
           dot={false}
           connectNulls
@@ -284,7 +285,7 @@ function TtftChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
           type="monotone"
           dataKey="p95_ttft_ms"
           name="P95 TTFT"
-          stroke={CHART_COLORS.palette[7]}
+          stroke={getChartColor(7)}
           strokeWidth={1.5}
           strokeDasharray="4 2"
           dot={false}
@@ -351,8 +352,8 @@ function TokenBurnChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
           dataKey="input_tokens"
           name="Input"
           stackId="tokens"
-          stroke={CHART_COLORS.palette[8]}
-          fill={CHART_COLORS.palette[8]}
+          stroke={getChartColor(8)}
+          fill={getChartColor(8)}
           fillOpacity={0.2}
           strokeWidth={2}
           {...ANIMATION_PROPS}
@@ -362,8 +363,8 @@ function TokenBurnChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
           dataKey="output_tokens"
           name="Output"
           stackId="tokens"
-          stroke={CHART_COLORS.palette[4]}
-          fill={CHART_COLORS.palette[4]}
+          stroke={getChartColor(4)}
+          fill={getChartColor(4)}
           fillOpacity={0.2}
           strokeWidth={2}
           {...ANIMATION_PROPS}
