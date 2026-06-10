@@ -1,9 +1,23 @@
-import { describe, expect, test, beforeEach, afterEach } from "vitest";
+import { describe, expect, test, beforeEach, afterEach, vi } from "vitest";
 import { Database } from "bun:sqlite";
-import { createSettingsRoute } from "../../src/routes/settings.ts";
-import { initSettings, getSetting, setSetting } from "../../src/db/settings.ts";
-import { cacheServerTools, cacheIPWhitelist, cacheOptimizations, cacheSoundSettings } from "../../src/lib/utils.ts";
-import { state } from "../../src/lib/state.ts";
+
+// Stub the local-detection and AUR-fetch helpers that cacheVersions() awaits.
+// Without these, PUT/DELETE /settings handlers reach out to the network
+// (AUR pkgbuild) and the filesystem (~/.vscode/extensions), which races
+// vitest's default 5s test timeout on slow CI runners and trips
+// "Cannot use a closed database" when the deferred work outlives afterEach.
+vi.mock("../../src/services/get-vscode-version", () => ({
+  getVSCodeVersion: () => Promise.resolve(undefined),
+}));
+vi.mock("../../src/services/detect-local-versions", () => ({
+  detectLocalVSCodeVersion: () => Promise.resolve(null),
+  detectLocalCopilotVersion: () => Promise.resolve(null),
+}));
+
+const { createSettingsRoute } = await import("../../src/routes/settings.ts");
+const { initSettings, getSetting, setSetting } = await import("../../src/db/settings.ts");
+const { cacheServerTools, cacheIPWhitelist, cacheOptimizations, cacheSoundSettings } = await import("../../src/lib/utils.ts");
+const { state } = await import("../../src/lib/state.ts");
 
 let db: Database;
 
