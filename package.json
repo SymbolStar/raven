@@ -51,9 +51,9 @@
     "postcss": ">=8.5.10"
   },
   "dependencies": {
-    "hono": "4.12.24",
+    "hono": "4.12.25",
     "micromatch": "^4.0.8",
-    "next": "16.2.8",
+    "next": "16.2.9",
     "vite": "8.0.16",
     "vitest": "^4.1.8"
   }
