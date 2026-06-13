@@ -314,4 +314,39 @@ describe("CreateKeyDialog", () => {
       expect(screen.getByText("Failed to create key")).toBeDefined();
     });
   });
+
+  it("re-opening dialog after a successful create resets to the name-input view", async () => {
+    // First create succeeds and surfaces the key.
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ id: "1", key: "rk-first-key" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    renderWithDialog();
+    const user = await openDialog();
+
+    let input = screen.getByPlaceholderText(/cursor-mbp/i);
+    await user.type(input, "first-key");
+    await user.click(screen.getByRole("button", { name: /^Create$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("rk-first-key")).toBeDefined();
+    });
+
+    // Close (Done) and re-open: dialog must prompt for a fresh name, not
+    // re-display the stale created-key view.
+    await user.click(screen.getByRole("button", { name: /Done/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("rk-first-key")).toBeNull();
+    });
+
+    await user.click(screen.getByRole("button", { name: /Create Key/i }));
+
+    input = await screen.findByPlaceholderText(/cursor-mbp/i);
+    expect((input as HTMLInputElement).value).toBe("");
+    expect(screen.queryByText("rk-first-key")).toBeNull();
+  });
 });
