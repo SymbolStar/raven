@@ -1,5 +1,23 @@
 # Changelog
 
+## v2.3.3
+
+### Added
+- Auto-refresh models cache every hour on API requests
+
+### Changed
+- Upgrade base-ci to v2026.4
+- Upgrade @tailwindcss/postcss 4.1.5 → 4.3.1
+- Upgrade tailwindcss 4.1.5 → 4.3.1
+- Upgrade lucide-react 1.17.0 → 1.18.0
+- Upgrade eslint 10.4.1 → 10.5.0
+- Upgrade @types/node to 25.9.3
+- Stub version detection in settings.test to fix CI timeout
+- Upgrade hono to 4.12.25
+- Upgrade next to 16.2.9
+- Upgrade next to 16.2.8
+- Upgrade typescript-eslint 8.60.1 → 8.61.0
+
 ## v2.3.2
 
 ### Changed
