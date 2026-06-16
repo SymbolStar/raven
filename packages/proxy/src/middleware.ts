@@ -3,6 +3,7 @@ import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import { validateApiKey } from "./db/keys.ts";
 import { state } from "./lib/state.ts";
+import { refreshModelsIfStale } from "./lib/utils.ts";
 import { extractIPv4, parseIPv4, isIPInRanges } from "./lib/ip-whitelist.ts";
 
 declare module "hono" {
@@ -130,6 +131,7 @@ export function apiKeyAuth(opts: ApiKeyAuthOpts) {
     const result = validateRequestToken(c, db, envApiKey, null);
     if (!result.valid) return result.response;
     c.set("keyName", result.keyName);
+    refreshModelsIfStale();
     await next();
   });
 }

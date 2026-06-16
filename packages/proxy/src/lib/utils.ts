@@ -17,9 +17,22 @@ export const sleep = (ms: number) => Bun.sleep(ms)
 export const isNullish = (value: unknown): value is null | undefined =>
   value === null || value === undefined
 
+const MODEL_CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour
+let modelsCachedAt = 0
+let modelsRefreshing: Promise<void> | null = null
+
 export async function cacheModels(): Promise<void> {
   const models = await getModels()
   state.models = models
+  modelsCachedAt = Date.now()
+}
+
+export function refreshModelsIfStale(): void {
+  if (Date.now() - modelsCachedAt < MODEL_CACHE_TTL_MS) return
+  if (modelsRefreshing) return
+  modelsRefreshing = cacheModels()
+    .catch(() => {})
+    .finally(() => { modelsRefreshing = null })
 }
 
 const VSCODE_VERSION_FALLBACK = "1.117.0"
