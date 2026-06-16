@@ -8,7 +8,7 @@
 // the composition root (§3.8).
 
 import type { CompiledProvider } from "../db/providers"
-import { translateModelName } from "../protocols/anthropic/preprocess"
+import { resolveAgainstCatalog, translateModelName } from "../protocols/anthropic/preprocess"
 
 export type StrategyName =
   | "copilot-native"
@@ -107,6 +107,7 @@ export function pickStrategy(input: RouterInput): StrategyDecision {
 
   if (protocol === "anthropic") {
     const normalisedModel = translateModelName(model, anthropicBeta ?? null)
+    const catalogModel = resolveAgainstCatalog(normalisedModel, modelsCatalogIds)
     const candidates =
       normalisedModel !== model ? [model, normalisedModel] : [model]
     const matched = matchProvider(candidates, providers)
@@ -117,7 +118,7 @@ export function pickStrategy(input: RouterInput): StrategyDecision {
           : "custom-openai"
       return { kind: "ok", name, providerId: matched.provider.id }
     }
-    if (nativeSupported(normalisedModel, modelsCatalogIds)) {
+    if (nativeSupported(catalogModel, modelsCatalogIds)) {
       return { kind: "ok", name: "copilot-native" }
     }
     return { kind: "ok", name: "copilot-translated" }

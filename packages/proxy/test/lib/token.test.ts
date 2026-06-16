@@ -7,6 +7,8 @@ import { state } from "../../src/lib/state"
 import { HTTPError } from "../../src/lib/error"
 import type { TimerFactory } from "../../src/lib/token"
 
+const cacheModelsMock = vi.fn()
+
 // ---------------------------------------------------------------------------
 // Mock ~/lib/paths to redirect token file to temp dir.
 // This module is not imported by any other test file → no poisoning risk.
@@ -31,6 +33,12 @@ vi.mock("../../src/lib/paths", () => ({
   },
 }))
 
+vi.mock("../../src/lib/utils", () => ({
+  cacheModels: cacheModelsMock,
+  sleep: () => Promise.resolve(),
+  isNullish: (v: unknown) => v === null || v === undefined,
+}))
+
 // Import AFTER mock is registered
 const { setupGitHubToken, setupCopilotToken } = await import("../../src/lib/token")
 
@@ -47,6 +55,7 @@ beforeEach(() => {
   state.copilotToken = null
   state.vsCodeVersion = "1.90.0"
   state.accountType = "individual"
+  cacheModelsMock.mockReset()
   fetchSpy = vi.spyOn(globalThis, "fetch")
 })
 
@@ -251,6 +260,19 @@ describe("setupCopilotToken", () => {
     expect(state.copilotToken).toBe("copilot-jwt-refreshed")
     // Original timer still active (same interval)
     expect(fakeTimers.timers[0]!.cleared).toBe(false)
+  })
+
+  test("refresh success: refreshes cached models for the new token", async () => {
+    const fakeTimers = createFakeTimers()
+    mockCopilotTokenResponse("copilot-jwt", 1500)
+    await setupCopilotToken(fakeTimers)
+
+    cacheModelsMock.mockClear()
+    mockCopilotTokenResponse("copilot-jwt-refreshed", 1500)
+    await fakeTimers.tick(fakeTimers.timers[0]!.id)
+
+    expect(state.copilotToken).toBe("copilot-jwt-refreshed")
+    expect(cacheModelsMock).toHaveBeenCalledTimes(1)
   })
 
   test("refresh with changed refresh_in: reschedules with new interval", async () => {

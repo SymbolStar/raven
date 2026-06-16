@@ -84,6 +84,17 @@ describe("pickStrategy — branch coverage assertions", () => {
     expect(decision).toEqual({ kind: "ok", name: "copilot-native" })
   })
 
+  test("anthropic with context-1m beta uses catalog internal alias for native routing", () => {
+    const decision = pickStrategy({
+      protocol: "anthropic",
+      model: "claude-opus-4-7",
+      anthropicBeta: "context-1m-2025-08-07",
+      providers: [],
+      modelsCatalogIds: ["claude-opus-4.7", "claude-opus-4.7-1m-internal"],
+    })
+    expect(decision).toEqual({ kind: "ok", name: "copilot-native" })
+  })
+
   test("anthropic exact-on-raw beats glob-on-normalised within candidate order", () => {
     // raw matches an exact pattern; normalised would only hit a glob.
     // Per resolveProviderForModels, exact pass beats glob pass globally.

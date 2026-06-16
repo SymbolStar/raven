@@ -97,17 +97,30 @@ function translateModelNameUncached(model: string, anthropicBeta: string | null)
 }
 
 /**
- * Catalog-aware resolution: if the translated name isn't in the live
- * Copilot models catalog, try the `-internal` variant (some 1m/preview
- * models ship under e.g. `claude-opus-4.7-1m-internal`). Falls back to
- * the input name so behaviour is unchanged when catalog is empty or
- * already contains the exact id.
+ * Catalog-aware resolution: reconcile a generated Copilot model id against
+ * the live models catalog.
+ *
+ * Resolution order (first hit wins):
+ * 1. Exact id present in catalog → use as-is.
+ * 2. `-internal` variant present (some preview/1m SKUs historically shipped
+ *    under e.g. `claude-opus-4.7-1m-internal`) → use that.
+ * 3. A `-1m` id whose base model is in the catalog → fall back to the base.
+ *    Copilot folded the 1M context window into the base models and retired
+ *    the standalone `-1m` / `-1m-internal` SKUs, so `claude-opus-4.7-1m`
+ *    must resolve to `claude-opus-4.7` (which now serves 1M by default).
+ *
+ * Falls back to the input name so behaviour is unchanged when the catalog is
+ * empty or already contains the exact id.
  */
 export function resolveAgainstCatalog(name: string, catalogIds: readonly string[]): string {
   if (catalogIds.length === 0) return name
   if (catalogIds.includes(name)) return name
   const internalVariant = `${name}-internal`
   if (catalogIds.includes(internalVariant)) return internalVariant
+  if (name.endsWith("-1m")) {
+    const base = name.slice(0, -3)
+    if (catalogIds.includes(base)) return base
+  }
   return name
 }
 
