@@ -42,7 +42,7 @@
     "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.7",
-    "typescript-eslint": "^8.61.0"
+    "typescript-eslint": "^8.61.1"
   },
   "overrides": {
     "flatted": ">=3.4.2",
@@ -56,6 +56,6 @@
     "micromatch": "^4.0.8",
     "next": "16.2.9",
     "vite": "8.0.16",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.9"
   }
 }
