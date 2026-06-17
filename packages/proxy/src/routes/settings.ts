@@ -380,20 +380,33 @@ export function createSettingsRoute(db: Database): Hono {
           400,
         );
       }
-      const ORIGIN_RE = /^https?:\/\//;
-      const invalid = parsed.filter((v: string) => !ORIGIN_RE.test(v));
+      const invalid: string[] = [];
+      const normalized: string[] = [];
+      for (const v of parsed as string[]) {
+        try {
+          const origin = new URL(v).origin;
+          if (origin === "null") {
+            invalid.push(v);
+          } else {
+            normalized.push(origin);
+          }
+        } catch {
+          invalid.push(v);
+        }
+      }
       if (invalid.length > 0) {
         return c.json(
           {
             error: {
               type: "validation_error",
-              message: `invalid origin(s): ${invalid.join(", ")}. Each origin must start with http:// or https://`,
+              message: `invalid origin(s): ${invalid.join(", ")}. Each value must be a valid http:// or https:// URL`,
             },
           },
           400,
         );
       }
-      setSetting(db, key, JSON.stringify(parsed));
+      const deduped = [...new Set(normalized)];
+      setSetting(db, key, JSON.stringify(deduped));
       cacheCorsSettings(db);
       return c.json(getSettingsSnapshot(db));
     } else if (key === "sound_name") {

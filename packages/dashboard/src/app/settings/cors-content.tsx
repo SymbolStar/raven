@@ -81,16 +81,23 @@ export function CorsContent({ data }: CorsContentProps) {
   const handleAddOrigin = useCallback(() => {
     const trimmed = newOrigin.trim();
     if (!trimmed) return;
-    if (origins.includes(trimmed)) {
+    let normalized: string;
+    try {
+      normalized = new URL(trimmed).origin;
+      if (normalized === "null") {
+        setError("Invalid URL — must be http:// or https://");
+        return;
+      }
+    } catch {
+      setError("Invalid URL — must be http:// or https://");
+      return;
+    }
+    if (origins.includes(normalized)) {
       setError("This origin already exists");
       return;
     }
-    if (!/^https?:\/\//.test(trimmed)) {
-      setError("Origin must start with http:// or https://");
-      return;
-    }
     setNewOrigin("");
-    saveOrigins([...origins, trimmed]);
+    saveOrigins([...origins, normalized]);
   }, [newOrigin, origins, saveOrigins]);
 
   const handleRemoveOrigin = useCallback(

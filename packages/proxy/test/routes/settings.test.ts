@@ -819,6 +819,86 @@ describe("settings route", () => {
       expect(body.error.message).toContain("localhost:3000");
     });
 
+    test("normalizes origins: strips trailing slash and path", async () => {
+      const app = createSettingsRoute(db);
+      const res = await app.request("/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "cors_allowed_origins",
+          value: JSON.stringify(["https://app.example.com/", "https://other.com/path/to/page"]),
+        }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.cors.allowed_origins).toEqual(["https://app.example.com", "https://other.com"]);
+    });
+
+    test("normalizes origins: lowercases scheme and host", async () => {
+      const app = createSettingsRoute(db);
+      const res = await app.request("/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "cors_allowed_origins",
+          value: JSON.stringify(["HTTPS://Example.COM"]),
+        }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.cors.allowed_origins).toEqual(["https://example.com"]);
+    });
+
+    test("normalizes origins: strips default port", async () => {
+      const app = createSettingsRoute(db);
+      const res = await app.request("/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "cors_allowed_origins",
+          value: JSON.stringify(["https://app.example.com:443", "http://app.example.com:80"]),
+        }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.cors.allowed_origins).toEqual(["https://app.example.com", "http://app.example.com"]);
+    });
+
+    test("preserves non-default port", async () => {
+      const app = createSettingsRoute(db);
+      const res = await app.request("/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "cors_allowed_origins",
+          value: JSON.stringify(["http://localhost:3000"]),
+        }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.cors.allowed_origins).toEqual(["http://localhost:3000"]);
+    });
+
+    test("deduplicates origins after normalization", async () => {
+      const app = createSettingsRoute(db);
+      const res = await app.request("/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "cors_allowed_origins",
+          value: JSON.stringify([
+            "https://app.example.com",
+            "https://app.example.com/",
+            "https://App.Example.COM",
+            "https://app.example.com:443",
+          ]),
+        }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.cors.allowed_origins).toEqual(["https://app.example.com"]);
+    });
+
     test("deletes cors_enabled", async () => {
       setSetting(db, "cors_enabled", "true");
       cacheCorsSettings(db);
