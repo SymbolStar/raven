@@ -384,11 +384,11 @@ export function createSettingsRoute(db: Database): Hono {
       const normalized: string[] = [];
       for (const v of parsed as string[]) {
         try {
-          const origin = new URL(v).origin;
-          if (origin === "null") {
+          const url = new URL(v);
+          if (url.protocol !== "http:" && url.protocol !== "https:") {
             invalid.push(v);
           } else {
-            normalized.push(origin);
+            normalized.push(url.origin);
           }
         } catch {
           invalid.push(v);

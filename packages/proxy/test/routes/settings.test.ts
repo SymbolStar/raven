@@ -819,6 +819,23 @@ describe("settings route", () => {
       expect(body.error.message).toContain("localhost:3000");
     });
 
+    test("rejects non-http schemes (ftp, ws)", async () => {
+      const app = createSettingsRoute(db);
+      const res = await app.request("/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "cors_allowed_origins",
+          value: JSON.stringify(["ftp://example.com", "ws://example.com"]),
+        }),
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error.type).toBe("validation_error");
+      expect(body.error.message).toContain("ftp://example.com");
+      expect(body.error.message).toContain("ws://example.com");
+    });
+
     test("normalizes origins: strips trailing slash and path", async () => {
       const app = createSettingsRoute(db);
       const res = await app.request("/settings", {

@@ -83,11 +83,12 @@ export function CorsContent({ data }: CorsContentProps) {
     if (!trimmed) return;
     let normalized: string;
     try {
-      normalized = new URL(trimmed).origin;
-      if (normalized === "null") {
+      const url = new URL(trimmed);
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
         setError("Invalid URL — must be http:// or https://");
         return;
       }
+      normalized = url.origin;
     } catch {
       setError("Invalid URL — must be http:// or https://");
       return;
