@@ -36,10 +36,6 @@ export interface State {
   // Custom providers — cached enabled records (compiled), refreshed on CRUD operations
   providers: CompiledProvider[]
 
-  // Sound notifications on error
-  soundEnabled: boolean
-  soundName: string
-
   // IP whitelist — access control (default: disabled)
   ipWhitelistEnabled: boolean
   ipWhitelistRanges: IPRange[]
@@ -81,8 +77,6 @@ export const state: State = {
   stWebSearchEnabled: false,
   stWebSearchApiKey: null,
   providers: [],
-  soundEnabled: false,
-  soundName: "Basso",
   ipWhitelistEnabled: false,
   ipWhitelistRanges: [],
   ipWhitelistTrustProxy: false,

@@ -16,7 +16,6 @@ import { createKeysRoute } from "./routes/keys"
 import { createConnectionInfoRoute } from "./routes/connection-info"
 import { createSettingsRoute } from "./routes/settings"
 import { createUpstreamsRoute } from "./routes/upstreams"
-import { createSoundRoute } from "./routes/sound"
 import { createSocks5SettingsRoute } from "./routes/settings-socks5"
 import { createLiveRoute } from "./routes/live"
 
@@ -93,7 +92,6 @@ export function createApp(deps: AppDeps): Hono {
   app.route("/api", createConnectionInfoRoute({ port: port ?? 7024, baseUrl: baseUrl ?? null }))
   app.route("/api", createSettingsRoute(db))
   app.route("/api", createUpstreamsRoute(db))
-  app.route("/api", createSoundRoute())
   app.route("/api", createSocks5SettingsRoute(db))
   app.route("/api", createLiveRoute(db))
 

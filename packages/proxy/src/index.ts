@@ -9,7 +9,7 @@ import { runMigrations } from "./lib/migration"
 import { DIR_MODE } from "./lib/app-dirs"
 import { state } from "./lib/state"
 import { setupGitHubToken, setupCopilotToken } from "./lib/token"
-import { cacheModels, cacheVersions, cacheOptimizations, cacheProviders, cacheServerTools, cacheSoundSettings, cacheIPWhitelist, cacheCorsSettings, cacheSocks5Settings } from "./lib/utils"
+import { cacheModels, cacheVersions, cacheOptimizations, cacheProviders, cacheServerTools, cacheIPWhitelist, cacheCorsSettings, cacheSocks5Settings } from "./lib/utils"
 import { startBridge, stopBridge } from "./lib/socks5-bridge"
 import { initDatabase } from "./db/requests"
 import { startRequestSink } from "./db/request-sink"
@@ -59,10 +59,7 @@ cacheProviders(db)
 // 3d. Load server tool settings from DB
 cacheServerTools(db)
 
-// 3e. Load sound settings from DB
-cacheSoundSettings(db)
-
-// 3f. Load IP whitelist settings from DB
+// 3e. Load IP whitelist settings from DB
 cacheIPWhitelist(db)
 
 // 3g. Load CORS settings from DB

@@ -280,13 +280,6 @@ export interface ServerToolInfo {
   has_api_key: boolean;
 }
 
-export interface SoundInfo {
-  available: boolean;
-  enabled: boolean;
-  sound_name: string;
-  available_sounds: string[];
-}
-
 export interface IPWhitelistInfo {
   enabled: boolean;
   trust_proxy: boolean;
@@ -304,7 +297,6 @@ export interface SettingsData {
   optimizations: Record<string, OptimizationInfo>;
   debug: Record<string, OptimizationInfo>;
   server_tools: Record<string, ServerToolInfo>;
-  sound: SoundInfo;
   ip_whitelist: IPWhitelistInfo;
   cors: CorsInfo;
 }

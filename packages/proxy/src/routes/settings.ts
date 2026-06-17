@@ -1,9 +1,8 @@
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { getSetting, setSetting, deleteSetting } from "../db/settings";
-import { cacheVersions, cacheOptimizations, cacheServerTools, cacheSoundSettings, cacheIPWhitelist, cacheCorsSettings } from "../lib/utils";
+import { cacheVersions, cacheOptimizations, cacheServerTools, cacheIPWhitelist, cacheCorsSettings } from "../lib/utils";
 import { state } from "../lib/state";
-import { SYSTEM_SOUNDS, isValidSound, SOUND_AVAILABLE } from "./sound";
 import { parseIPRanges, serializeIPRanges } from "../lib/ip-whitelist";
 
 // ---------------------------------------------------------------------------
@@ -30,12 +29,6 @@ const SERVER_TOOL_KEYS = [
 /** Server tool boolean keys (for validation). */
 const SERVER_TOOL_BOOLEAN_KEYS = ["st_web_search_enabled"] as const;
 
-/** Sound setting keys. */
-const SOUND_KEYS = ["sound_enabled", "sound_name"] as const;
-
-/** Sound boolean keys (for validation). */
-const SOUND_BOOLEAN_KEYS = ["sound_enabled"] as const;
-
 /** IP whitelist setting keys. */
 const IP_WHITELIST_KEYS = ["ip_whitelist_enabled", "ip_whitelist_ranges", "ip_whitelist_trust_proxy"] as const;
 
@@ -51,12 +44,11 @@ const CORS_BOOLEAN_KEYS = ["cors_enabled"] as const;
 type VersionKey = (typeof VERSION_KEYS)[number];
 type OptimizationKey = (typeof OPTIMIZATION_KEYS)[number];
 type ServerToolKey = (typeof SERVER_TOOL_KEYS)[number];
-type SoundKey = (typeof SOUND_KEYS)[number];
 type IPWhitelistKey = (typeof IP_WHITELIST_KEYS)[number];
 type CorsKey = (typeof CORS_KEYS)[number];
 
 /** All known setting keys accepted by the API. */
-const KNOWN_KEYS = [...VERSION_KEYS, ...OPTIMIZATION_KEYS, ...SERVER_TOOL_KEYS, ...SOUND_KEYS, ...IP_WHITELIST_KEYS, ...CORS_KEYS] as const;
+const KNOWN_KEYS = [...VERSION_KEYS, ...OPTIMIZATION_KEYS, ...SERVER_TOOL_KEYS, ...IP_WHITELIST_KEYS, ...CORS_KEYS] as const;
 type SettingKey = (typeof KNOWN_KEYS)[number];
 
 function isKnownKey(key: string): key is SettingKey {
@@ -77,14 +69,6 @@ function isServerToolKey(key: string): key is ServerToolKey {
 
 function isServerToolBooleanKey(key: string): key is ServerToolKey {
   return (SERVER_TOOL_BOOLEAN_KEYS as readonly string[]).includes(key);
-}
-
-function isSoundKey(key: string): key is SoundKey {
-  return (SOUND_KEYS as readonly string[]).includes(key);
-}
-
-function isSoundBooleanKey(key: string): key is SoundKey {
-  return (SOUND_BOOLEAN_KEYS as readonly string[]).includes(key);
 }
 
 function isIPWhitelistKey(key: string): key is IPWhitelistKey {
@@ -141,13 +125,6 @@ export interface ServerToolInfo {
   has_api_key: boolean;
 }
 
-export interface SoundInfo {
-  available: boolean;
-  enabled: boolean;
-  sound_name: string;
-  available_sounds: readonly string[];
-}
-
 export interface IPWhitelistInfo {
   enabled: boolean;
   trust_proxy: boolean;
@@ -165,7 +142,6 @@ export interface SettingsSnapshot {
   optimizations: Record<string, OptimizationInfo>;
   debug: Record<string, OptimizationInfo>;
   server_tools: Record<string, ServerToolInfo>;
-  sound: SoundInfo;
   ip_whitelist: IPWhitelistInfo;
   cors: CorsInfo;
 }
@@ -215,12 +191,6 @@ function getSettingsSnapshot(db: Database): SettingsSnapshot {
         enabled: state.stWebSearchEnabled,
         has_api_key: state.stWebSearchApiKey !== null,
       },
-    },
-    sound: {
-      available: SOUND_AVAILABLE,
-      enabled: state.soundEnabled,
-      sound_name: state.soundName,
-      available_sounds: SYSTEM_SOUNDS,
     },
     ip_whitelist: {
       enabled: state.ipWhitelistEnabled,
@@ -318,18 +288,6 @@ export function createSettingsRoute(db: Database): Hono {
           400,
         );
       }
-    } else if (isSoundBooleanKey(key)) {
-      if (!isValidBoolean(trimmed)) {
-        return c.json(
-          {
-            error: {
-              type: "validation_error",
-              message: `invalid boolean value: "${trimmed}". Expected "true" or "false"`,
-            },
-          },
-          400,
-        );
-      }
     } else if (isIPWhitelistBooleanKey(key)) {
       if (!isValidBoolean(trimmed)) {
         return c.json(
@@ -409,18 +367,6 @@ export function createSettingsRoute(db: Database): Hono {
       setSetting(db, key, JSON.stringify(deduped));
       cacheCorsSettings(db);
       return c.json(getSettingsSnapshot(db));
-    } else if (key === "sound_name") {
-      if (!isValidSound(trimmed)) {
-        return c.json(
-          {
-            error: {
-              type: "validation_error",
-              message: `invalid sound name: "${trimmed}". Must be one of: ${SYSTEM_SOUNDS.join(", ")}`,
-            },
-          },
-          400,
-        );
-      }
     } else if (key === "ip_whitelist_ranges") {
       // Validate JSON array of IP ranges
       const { ranges, errors } = parseIPRanges(trimmed);
@@ -448,8 +394,6 @@ export function createSettingsRoute(db: Database): Hono {
       await cacheVersions(db);
     } else if (isServerToolKey(key)) {
       cacheServerTools(db);
-    } else if (isSoundKey(key)) {
-      cacheSoundSettings(db);
     } else if (isIPWhitelistKey(key)) {
       cacheIPWhitelist(db);
     } else if (isCorsKey(key)) {
@@ -482,8 +426,6 @@ export function createSettingsRoute(db: Database): Hono {
       await cacheVersions(db);
     } else if (isServerToolKey(key)) {
       cacheServerTools(db);
-    } else if (isSoundKey(key)) {
-      cacheSoundSettings(db);
     } else if (isIPWhitelistKey(key)) {
       cacheIPWhitelist(db);
     } else if (isCorsKey(key)) {

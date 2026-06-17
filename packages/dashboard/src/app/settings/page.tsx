@@ -1,4 +1,4 @@
-import { Volume2, Shield, Sparkles, Wrench, Globe } from "lucide-react";
+import { Shield, Sparkles, Wrench, Globe } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { FetchError } from "@/components/fetch-error";
 import { StatCard } from "@/components/stats/stat-card";
@@ -6,7 +6,6 @@ import { safeFetch } from "@/lib/proxy";
 import type { SettingsData } from "@/lib/types";
 import { SettingsContent } from "./settings-content";
 import { OptimizationsContent } from "./optimizations-content";
-import { SoundContent } from "./sound-content";
 import { IPWhitelistContent } from "./ip-whitelist-content";
 import { CorsContent } from "./cors-content";
 
@@ -34,18 +33,11 @@ export default async function SettingsPage() {
       <div className="space-y-4 md:space-y-6">
         <div className="flex flex-col gap-1">
           <h1 className="text-display">Settings</h1>
-          <p className="text-meta">Server status, sound notifications, IP whitelist, CORS and request optimizations.</p>
+          <p className="text-meta">Server status, IP whitelist, CORS and request optimizations.</p>
         </div>
 
         {/* Status overview tiles */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-          <StatCard
-            icon={Volume2}
-            label="Sound"
-            value={data.sound.available ? (data.sound.enabled ? "On" : "Off") : "N/A"}
-            detail={data.sound.available ? data.sound.sound_name : "unavailable"}
-            accent={data.sound.available && data.sound.enabled ? "success" : "default"}
-          />
           <StatCard
             icon={Shield}
             label="IP Whitelist"
@@ -75,7 +67,6 @@ export default async function SettingsPage() {
         </div>
 
         <SettingsContent data={data} />
-        {data.sound.available && <SoundContent data={data.sound} />}
         <IPWhitelistContent data={data.ip_whitelist} />
         <CorsContent data={data.cors} />
         <OptimizationsContent data={data.optimizations} />

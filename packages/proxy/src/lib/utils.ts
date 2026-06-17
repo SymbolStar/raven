@@ -153,15 +153,6 @@ export function cacheServerTools(db: Database): void {
 }
 
 /**
- * Load sound notification settings from DB into runtime state.
- * Called at startup and after any sound setting change.
- */
-export function cacheSoundSettings(db: Database): void {
-  state.soundEnabled = getSetting(db, "sound_enabled") === "true"
-  state.soundName = getSetting(db, "sound_name") ?? "Basso"
-}
-
-/**
  * Load IP whitelist settings from DB into runtime state.
  * Called at startup and after any IP whitelist setting change.
  */

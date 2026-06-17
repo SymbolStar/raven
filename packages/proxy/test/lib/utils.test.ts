@@ -8,7 +8,6 @@ import {
   cacheServerTools,
   cacheOptimizations,
   cacheProviders,
-  cacheSoundSettings,
   cacheIPWhitelist,
   isNullish,
   sleep,
@@ -382,58 +381,6 @@ describe("cacheProviders", () => {
     cacheProviders(db)
     expect(state.providers.length).toBe(1)
     expect(state.providers[0]!.name).toBe("EnabledProvider")
-  })
-})
-
-// ===========================================================================
-// cacheSoundSettings
-// ===========================================================================
-
-describe("cacheSoundSettings", () => {
-  const savedSoundEnabled = state.soundEnabled
-  const savedSoundName = state.soundName
-
-  afterEach(() => {
-    state.soundEnabled = savedSoundEnabled
-    state.soundName = savedSoundName
-  })
-
-  test("loads defaults when DB is empty", () => {
-    cacheSoundSettings(db)
-    expect(state.soundEnabled).toBe(false)
-    expect(state.soundName).toBe("Basso")
-  })
-
-  test("loads sound_enabled = true", () => {
-    db.query("INSERT INTO settings (key, value) VALUES ($key, $value)").run({
-      $key: "sound_enabled",
-      $value: "true",
-    })
-    cacheSoundSettings(db)
-    expect(state.soundEnabled).toBe(true)
-  })
-
-  test("loads custom sound_name", () => {
-    db.query("INSERT INTO settings (key, value) VALUES ($key, $value)").run({
-      $key: "sound_name",
-      $value: "Ping",
-    })
-    cacheSoundSettings(db)
-    expect(state.soundName).toBe("Ping")
-  })
-
-  test("loads both sound settings from DB", () => {
-    db.query("INSERT INTO settings (key, value) VALUES ($key, $value)").run({
-      $key: "sound_enabled",
-      $value: "true",
-    })
-    db.query("INSERT INTO settings (key, value) VALUES ($key, $value)").run({
-      $key: "sound_name",
-      $value: "Hero",
-    })
-    cacheSoundSettings(db)
-    expect(state.soundEnabled).toBe(true)
-    expect(state.soundName).toBe("Hero")
   })
 })
 

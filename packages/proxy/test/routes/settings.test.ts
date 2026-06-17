@@ -16,7 +16,7 @@ vi.mock("../../src/services/detect-local-versions", () => ({
 
 const { createSettingsRoute } = await import("../../src/routes/settings.ts");
 const { initSettings, getSetting, setSetting } = await import("../../src/db/settings.ts");
-const { cacheServerTools, cacheIPWhitelist, cacheOptimizations, cacheSoundSettings, cacheCorsSettings } = await import("../../src/lib/utils.ts");
+const { cacheServerTools, cacheIPWhitelist, cacheOptimizations, cacheCorsSettings } = await import("../../src/lib/utils.ts");
 const { state } = await import("../../src/lib/state.ts");
 
 let db: Database;
@@ -36,8 +36,6 @@ beforeEach(() => {
   state.ipWhitelistTrustProxy = false;
   state.corsEnabled = false;
   state.corsAllowedOrigins = [];
-  state.soundEnabled = false;
-  state.soundName = "Basso";
   state.vsCodeVersion = "1.117.0";
   state.vsCodeVersionSource = "fallback";
   state.copilotChatVersion = "0.45.1";
@@ -594,114 +592,6 @@ describe("settings route", () => {
       });
       expect(res.status).toBe(200);
       expect(state.optToolCallDebug).toBe(false);
-    });
-  });
-
-  describe("sound settings", () => {
-    test("GET /settings returns sound section", async () => {
-      const app = createSettingsRoute(db);
-      const res = await app.request("/settings");
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body).toHaveProperty("sound");
-      expect(body.sound.enabled).toBe(false);
-      expect(body.sound.sound_name).toBe("Basso");
-      expect(Array.isArray(body.sound.available_sounds)).toBe(true);
-    });
-
-    test("sets sound_enabled to true", async () => {
-      const app = createSettingsRoute(db);
-      const res = await app.request("/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: "sound_enabled", value: "true" }),
-      });
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.sound.enabled).toBe(true);
-      expect(state.soundEnabled).toBe(true);
-    });
-
-    test("sets sound_enabled to false", async () => {
-      setSetting(db, "sound_enabled", "true");
-      cacheSoundSettings(db);
-
-      const app = createSettingsRoute(db);
-      const res = await app.request("/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: "sound_enabled", value: "false" }),
-      });
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.sound.enabled).toBe(false);
-      expect(state.soundEnabled).toBe(false);
-    });
-
-    test("rejects invalid boolean for sound_enabled", async () => {
-      const app = createSettingsRoute(db);
-      const res = await app.request("/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: "sound_enabled", value: "yes" }),
-      });
-      expect(res.status).toBe(400);
-      const body = await res.json();
-      expect(body.error.type).toBe("validation_error");
-      expect(body.error.message).toContain("invalid boolean value");
-    });
-
-    test("sets sound_name to valid sound", async () => {
-      const app = createSettingsRoute(db);
-      const res = await app.request("/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: "sound_name", value: "Glass" }),
-      });
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.sound.sound_name).toBe("Glass");
-      expect(state.soundName).toBe("Glass");
-    });
-
-    test("rejects invalid sound_name", async () => {
-      const app = createSettingsRoute(db);
-      const res = await app.request("/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: "sound_name", value: "InvalidSound" }),
-      });
-      expect(res.status).toBe(400);
-      const body = await res.json();
-      expect(body.error.type).toBe("validation_error");
-      expect(body.error.message).toContain("invalid sound name");
-    });
-
-    test("deletes sound_enabled override", async () => {
-      setSetting(db, "sound_enabled", "true");
-      cacheSoundSettings(db);
-
-      const app = createSettingsRoute(db);
-      const res = await app.request("/settings/sound_enabled", {
-        method: "DELETE",
-      });
-      expect(res.status).toBe(200);
-      expect(state.soundEnabled).toBe(false);
-      expect(getSetting(db, "sound_enabled")).toBeNull();
-    });
-
-    test("deletes sound_name override", async () => {
-      setSetting(db, "sound_name", "Glass");
-      cacheSoundSettings(db);
-
-      const app = createSettingsRoute(db);
-      const res = await app.request("/settings/sound_name", {
-        method: "DELETE",
-      });
-      expect(res.status).toBe(200);
-      // Should revert to default "Basso"
-      expect(state.soundName).toBe("Basso");
-      expect(getSetting(db, "sound_name")).toBeNull();
     });
   });
 
