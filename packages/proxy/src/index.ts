@@ -9,7 +9,7 @@ import { runMigrations } from "./lib/migration"
 import { DIR_MODE } from "./lib/app-dirs"
 import { state } from "./lib/state"
 import { setupGitHubToken, setupCopilotToken } from "./lib/token"
-import { cacheModels, cacheVersions, cacheOptimizations, cacheProviders, cacheServerTools, cacheSoundSettings, cacheIPWhitelist, cacheSocks5Settings } from "./lib/utils"
+import { cacheModels, cacheVersions, cacheOptimizations, cacheProviders, cacheServerTools, cacheSoundSettings, cacheIPWhitelist, cacheCorsSettings, cacheSocks5Settings } from "./lib/utils"
 import { startBridge, stopBridge } from "./lib/socks5-bridge"
 import { initDatabase } from "./db/requests"
 import { startRequestSink } from "./db/request-sink"
@@ -65,10 +65,13 @@ cacheSoundSettings(db)
 // 3f. Load IP whitelist settings from DB
 cacheIPWhitelist(db)
 
-// 3g. Load SOCKS5 proxy settings from DB
+// 3g. Load CORS settings from DB
+cacheCorsSettings(db)
+
+// 3h. Load SOCKS5 proxy settings from DB
 cacheSocks5Settings(db)
 
-// 3h. Start SOCKS5 bridge if enabled (fail-hard: exits process on failure)
+// 3i. Start SOCKS5 bridge if enabled (fail-hard: exits process on failure)
 // Must be before token init — setupCopilotToken needs proxy for api.github.com
 if (state.socks5Enabled) {
   if (!state.socks5Host || !state.socks5Port) {

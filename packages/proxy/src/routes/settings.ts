@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { getSetting, setSetting, deleteSetting } from "../db/settings";
-import { cacheVersions, cacheOptimizations, cacheServerTools, cacheSoundSettings, cacheIPWhitelist } from "../lib/utils";
+import { cacheVersions, cacheOptimizations, cacheServerTools, cacheSoundSettings, cacheIPWhitelist, cacheCorsSettings } from "../lib/utils";
 import { state } from "../lib/state";
 import { SYSTEM_SOUNDS, isValidSound, SOUND_AVAILABLE } from "./sound";
 import { parseIPRanges, serializeIPRanges } from "../lib/ip-whitelist";
@@ -42,14 +42,21 @@ const IP_WHITELIST_KEYS = ["ip_whitelist_enabled", "ip_whitelist_ranges", "ip_wh
 /** IP whitelist boolean keys (for validation). */
 const IP_WHITELIST_BOOLEAN_KEYS = ["ip_whitelist_enabled", "ip_whitelist_trust_proxy"] as const;
 
+/** CORS setting keys. */
+const CORS_KEYS = ["cors_enabled", "cors_allowed_origins"] as const;
+
+/** CORS boolean keys (for validation). */
+const CORS_BOOLEAN_KEYS = ["cors_enabled"] as const;
+
 type VersionKey = (typeof VERSION_KEYS)[number];
 type OptimizationKey = (typeof OPTIMIZATION_KEYS)[number];
 type ServerToolKey = (typeof SERVER_TOOL_KEYS)[number];
 type SoundKey = (typeof SOUND_KEYS)[number];
 type IPWhitelistKey = (typeof IP_WHITELIST_KEYS)[number];
+type CorsKey = (typeof CORS_KEYS)[number];
 
 /** All known setting keys accepted by the API. */
-const KNOWN_KEYS = [...VERSION_KEYS, ...OPTIMIZATION_KEYS, ...SERVER_TOOL_KEYS, ...SOUND_KEYS, ...IP_WHITELIST_KEYS] as const;
+const KNOWN_KEYS = [...VERSION_KEYS, ...OPTIMIZATION_KEYS, ...SERVER_TOOL_KEYS, ...SOUND_KEYS, ...IP_WHITELIST_KEYS, ...CORS_KEYS] as const;
 type SettingKey = (typeof KNOWN_KEYS)[number];
 
 function isKnownKey(key: string): key is SettingKey {
@@ -86,6 +93,14 @@ function isIPWhitelistKey(key: string): key is IPWhitelistKey {
 
 function isIPWhitelistBooleanKey(key: string): key is IPWhitelistKey {
   return (IP_WHITELIST_BOOLEAN_KEYS as readonly string[]).includes(key);
+}
+
+function isCorsKey(key: string): key is CorsKey {
+  return (CORS_KEYS as readonly string[]).includes(key);
+}
+
+function isCorsBooleanKey(key: string): key is CorsKey {
+  return (CORS_BOOLEAN_KEYS as readonly string[]).includes(key);
 }
 
 // ---------------------------------------------------------------------------
@@ -139,6 +154,11 @@ export interface IPWhitelistInfo {
   ranges: string[];
 }
 
+export interface CorsInfo {
+  enabled: boolean;
+  allowed_origins: string[];
+}
+
 export interface SettingsSnapshot {
   vscode_version: SettingInfo;
   copilot_chat_version: SettingInfo;
@@ -147,6 +167,7 @@ export interface SettingsSnapshot {
   server_tools: Record<string, ServerToolInfo>;
   sound: SoundInfo;
   ip_whitelist: IPWhitelistInfo;
+  cors: CorsInfo;
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +226,10 @@ function getSettingsSnapshot(db: Database): SettingsSnapshot {
       enabled: state.ipWhitelistEnabled,
       trust_proxy: state.ipWhitelistTrustProxy,
       ranges: state.ipWhitelistRanges.map((r) => r.original),
+    },
+    cors: {
+      enabled: state.corsEnabled,
+      allowed_origins: state.corsAllowedOrigins,
     },
   };
 }
@@ -317,6 +342,60 @@ export function createSettingsRoute(db: Database): Hono {
           400,
         );
       }
+    } else if (isCorsBooleanKey(key)) {
+      if (!isValidBoolean(trimmed)) {
+        return c.json(
+          {
+            error: {
+              type: "validation_error",
+              message: `invalid boolean value: "${trimmed}". Expected "true" or "false"`,
+            },
+          },
+          400,
+        );
+      }
+    } else if (key === "cors_allowed_origins") {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        return c.json(
+          {
+            error: {
+              type: "validation_error",
+              message: "cors_allowed_origins must be a valid JSON array of strings",
+            },
+          },
+          400,
+        );
+      }
+      if (!Array.isArray(parsed) || !parsed.every((v) => typeof v === "string")) {
+        return c.json(
+          {
+            error: {
+              type: "validation_error",
+              message: "cors_allowed_origins must be a JSON array of strings",
+            },
+          },
+          400,
+        );
+      }
+      const ORIGIN_RE = /^https?:\/\//;
+      const invalid = parsed.filter((v: string) => !ORIGIN_RE.test(v));
+      if (invalid.length > 0) {
+        return c.json(
+          {
+            error: {
+              type: "validation_error",
+              message: `invalid origin(s): ${invalid.join(", ")}. Each origin must start with http:// or https://`,
+            },
+          },
+          400,
+        );
+      }
+      setSetting(db, key, JSON.stringify(parsed));
+      cacheCorsSettings(db);
+      return c.json(getSettingsSnapshot(db));
     } else if (key === "sound_name") {
       if (!isValidSound(trimmed)) {
         return c.json(
@@ -360,6 +439,8 @@ export function createSettingsRoute(db: Database): Hono {
       cacheSoundSettings(db);
     } else if (isIPWhitelistKey(key)) {
       cacheIPWhitelist(db);
+    } else if (isCorsKey(key)) {
+      cacheCorsSettings(db);
     } else {
       cacheOptimizations(db);
     }
@@ -392,6 +473,8 @@ export function createSettingsRoute(db: Database): Hono {
       cacheSoundSettings(db);
     } else if (isIPWhitelistKey(key)) {
       cacheIPWhitelist(db);
+    } else if (isCorsKey(key)) {
+      cacheCorsSettings(db);
     } else {
       cacheOptimizations(db);
     }

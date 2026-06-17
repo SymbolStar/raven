@@ -4,6 +4,7 @@ import { createApp } from "../src/app.ts"
 import { initDatabase } from "../src/db/requests.ts"
 import { initApiKeys, createApiKey } from "../src/db/keys.ts"
 import { invalidateKeyCountCache } from "../src/middleware.ts"
+import { state } from "../src/lib/state.ts"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -26,6 +27,8 @@ describe("createApp", () => {
   beforeEach(() => {
     db = createTestDb()
     invalidateKeyCountCache()
+    state.corsEnabled = false
+    state.corsAllowedOrigins = []
   })
 
   afterEach(() => {
@@ -183,5 +186,68 @@ describe("createApp", () => {
     expect(body.endpoints).toBeDefined()
     expect(body.endpoints.chat_completions).toBe("/v1/chat/completions")
     expect(body.endpoints.messages).toBe("/v1/messages")
+  })
+
+  // -----------------------------------------------------------------------
+  // CORS middleware behavior
+  // -----------------------------------------------------------------------
+
+  describe("CORS middleware", () => {
+    test("allows any origin when CORS is disabled", async () => {
+      state.corsEnabled = false
+      const app = createApp({ db, apiKey: null, internalKey: null, githubToken: "gh-test", port: null, baseUrl: null })
+      const res = await app.request("/health", {
+        headers: { Origin: "http://evil.com" },
+      })
+      expect(res.status).toBe(200)
+      expect(res.headers.get("access-control-allow-origin")).toBe("http://evil.com")
+    })
+
+    test("allows any origin when CORS enabled but list is empty", async () => {
+      state.corsEnabled = true
+      state.corsAllowedOrigins = []
+      const app = createApp({ db, apiKey: null, internalKey: null, githubToken: "gh-test", port: null, baseUrl: null })
+      const res = await app.request("/health", {
+        headers: { Origin: "http://anything.com" },
+      })
+      expect(res.status).toBe(200)
+      expect(res.headers.get("access-control-allow-origin")).toBe("http://anything.com")
+    })
+
+    test("allows whitelisted origin when CORS enabled with list", async () => {
+      state.corsEnabled = true
+      state.corsAllowedOrigins = ["http://localhost:3000", "https://app.example.com"]
+      const app = createApp({ db, apiKey: null, internalKey: null, githubToken: "gh-test", port: null, baseUrl: null })
+      const res = await app.request("/health", {
+        headers: { Origin: "http://localhost:3000" },
+      })
+      expect(res.status).toBe(200)
+      expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:3000")
+    })
+
+    test("blocks non-whitelisted origin when CORS enabled with list", async () => {
+      state.corsEnabled = true
+      state.corsAllowedOrigins = ["http://localhost:3000"]
+      const app = createApp({ db, apiKey: null, internalKey: null, githubToken: "gh-test", port: null, baseUrl: null })
+      const res = await app.request("/health", {
+        headers: { Origin: "http://evil.com" },
+      })
+      expect(res.status).toBe(200)
+      expect(res.headers.get("access-control-allow-origin")).not.toBe("http://evil.com")
+    })
+
+    test("CORS preflight returns correct origin for whitelisted origin", async () => {
+      state.corsEnabled = true
+      state.corsAllowedOrigins = ["http://localhost:3000"]
+      const app = createApp({ db, apiKey: null, internalKey: null, githubToken: "gh-test", port: null, baseUrl: null })
+      const res = await app.request("/health", {
+        method: "OPTIONS",
+        headers: {
+          Origin: "http://localhost:3000",
+          "Access-Control-Request-Method": "GET",
+        },
+      })
+      expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:3000")
+    })
   })
 })

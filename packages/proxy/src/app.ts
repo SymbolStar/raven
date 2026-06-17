@@ -1,7 +1,9 @@
 import { Hono } from "hono"
+import { cors } from "hono/cors"
 import type { Database } from "bun:sqlite"
 
 import { apiKeyAuth, dashboardAuth, ipWhitelistMiddleware } from "./middleware"
+import { state } from "./lib/state"
 import { completionRoutes } from "./routes/chat-completions/route"
 import { messageRoutes } from "./routes/messages/route"
 import { responsesRoutes } from "./routes/responses/route"
@@ -45,6 +47,14 @@ export function createApp(deps: AppDeps): Hono {
   // ------- IP whitelist (first, applies to all routes) -------
   // When enabled, silently drops requests from non-whitelisted IPs
   app.use("*", ipWhitelistMiddleware())
+
+  // ------- CORS -------
+  app.use("*", cors({
+    origin: (origin) => {
+      if (!state.corsEnabled || state.corsAllowedOrigins.length === 0) return origin
+      return state.corsAllowedOrigins.includes(origin) ? origin : ""
+    },
+  }))
 
   // ------- middleware -------
   // AI coding routes — strict auth, no dev mode, rejects RAVEN_INTERNAL_KEY

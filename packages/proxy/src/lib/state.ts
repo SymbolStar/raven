@@ -47,6 +47,10 @@ export interface State {
   // When false, only direct connection IP is used for whitelist checks
   ipWhitelistTrustProxy: boolean
 
+  // CORS — configurable allowed origins (default: disabled = allow all)
+  corsEnabled: boolean
+  corsAllowedOrigins: string[]
+
   // SOCKS5 proxy relay — hide exit IP via SOCKS5 proxy
   socks5Enabled: boolean
   socks5Host: string | null
@@ -82,6 +86,8 @@ export const state: State = {
   ipWhitelistEnabled: false,
   ipWhitelistRanges: [],
   ipWhitelistTrustProxy: false,
+  corsEnabled: false,
+  corsAllowedOrigins: [],
   socks5Enabled: false,
   socks5Host: null,
   socks5Port: null,

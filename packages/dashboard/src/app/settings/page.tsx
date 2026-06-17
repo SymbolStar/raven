@@ -1,4 +1,4 @@
-import { Volume2, Shield, Sparkles, Wrench } from "lucide-react";
+import { Volume2, Shield, Sparkles, Wrench, Globe } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { FetchError } from "@/components/fetch-error";
 import { StatCard } from "@/components/stats/stat-card";
@@ -8,6 +8,7 @@ import { SettingsContent } from "./settings-content";
 import { OptimizationsContent } from "./optimizations-content";
 import { SoundContent } from "./sound-content";
 import { IPWhitelistContent } from "./ip-whitelist-content";
+import { CorsContent } from "./cors-content";
 
 export const metadata = { title: "Settings" };
 
@@ -33,7 +34,7 @@ export default async function SettingsPage() {
       <div className="space-y-4 md:space-y-6">
         <div className="flex flex-col gap-1">
           <h1 className="text-display">Settings</h1>
-          <p className="text-meta">Server status, sound notifications, IP whitelist and request optimizations.</p>
+          <p className="text-meta">Server status, sound notifications, IP whitelist, CORS and request optimizations.</p>
         </div>
 
         {/* Status overview tiles */}
@@ -53,6 +54,13 @@ export default async function SettingsPage() {
             accent={data.ip_whitelist.enabled ? "success" : "default"}
           />
           <StatCard
+            icon={Globe}
+            label="CORS"
+            value={data.cors.enabled ? "On" : "Off"}
+            detail={`${data.cors.allowed_origins.length} origin${data.cors.allowed_origins.length === 1 ? "" : "s"}`}
+            accent={data.cors.enabled ? "success" : "default"}
+          />
+          <StatCard
             icon={Sparkles}
             label="Optimizations"
             value={`${optEnabled} / ${optTotal}`}
@@ -69,6 +77,7 @@ export default async function SettingsPage() {
         <SettingsContent data={data} />
         {data.sound.available && <SoundContent data={data.sound} />}
         <IPWhitelistContent data={data.ip_whitelist} />
+        <CorsContent data={data.cors} />
         <OptimizationsContent data={data.optimizations} />
       </div>
     </AppShell>

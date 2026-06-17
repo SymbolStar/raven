@@ -293,6 +293,11 @@ export interface IPWhitelistInfo {
   ranges: string[];
 }
 
+export interface CorsInfo {
+  enabled: boolean;
+  allowed_origins: string[];
+}
+
 export interface SettingsData {
   vscode_version: SettingInfo;
   copilot_chat_version: SettingInfo;
@@ -301,6 +306,7 @@ export interface SettingsData {
   server_tools: Record<string, ServerToolInfo>;
   sound: SoundInfo;
   ip_whitelist: IPWhitelistInfo;
+  cors: CorsInfo;
 }
 
 // ---------------------------------------------------------------------------

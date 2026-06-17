@@ -16,7 +16,7 @@ vi.mock("../../src/services/detect-local-versions", () => ({
 
 const { createSettingsRoute } = await import("../../src/routes/settings.ts");
 const { initSettings, getSetting, setSetting } = await import("../../src/db/settings.ts");
-const { cacheServerTools, cacheIPWhitelist, cacheOptimizations, cacheSoundSettings } = await import("../../src/lib/utils.ts");
+const { cacheServerTools, cacheIPWhitelist, cacheOptimizations, cacheSoundSettings, cacheCorsSettings } = await import("../../src/lib/utils.ts");
 const { state } = await import("../../src/lib/state.ts");
 
 let db: Database;
@@ -34,6 +34,8 @@ beforeEach(() => {
   state.ipWhitelistEnabled = false;
   state.ipWhitelistRanges = [];
   state.ipWhitelistTrustProxy = false;
+  state.corsEnabled = false;
+  state.corsAllowedOrigins = [];
   state.soundEnabled = false;
   state.soundName = "Basso";
   state.vsCodeVersion = "1.117.0";
@@ -700,6 +702,147 @@ describe("settings route", () => {
       // Should revert to default "Basso"
       expect(state.soundName).toBe("Basso");
       expect(getSetting(db, "sound_name")).toBeNull();
+    });
+  });
+
+  describe("CORS settings", () => {
+    test("GET /settings returns cors section", async () => {
+      const app = createSettingsRoute(db);
+      const res = await app.request("/settings");
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toHaveProperty("cors");
+      expect(body.cors).toEqual({ enabled: false, allowed_origins: [] });
+    });
+
+    test("sets cors_enabled to true", async () => {
+      const app = createSettingsRoute(db);
+      const res = await app.request("/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "cors_enabled", value: "true" }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.cors.enabled).toBe(true);
+      expect(state.corsEnabled).toBe(true);
+    });
+
+    test("sets cors_enabled to false", async () => {
+      setSetting(db, "cors_enabled", "true");
+      cacheCorsSettings(db);
+
+      const app = createSettingsRoute(db);
+      const res = await app.request("/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "cors_enabled", value: "false" }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.cors.enabled).toBe(false);
+      expect(state.corsEnabled).toBe(false);
+    });
+
+    test("rejects invalid boolean for cors_enabled", async () => {
+      const app = createSettingsRoute(db);
+      const res = await app.request("/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "cors_enabled", value: "yes" }),
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error.type).toBe("validation_error");
+    });
+
+    test("sets cors_allowed_origins with valid origins", async () => {
+      const app = createSettingsRoute(db);
+      const origins = ["http://localhost:3000", "https://app.example.com"];
+      const res = await app.request("/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "cors_allowed_origins",
+          value: JSON.stringify(origins),
+        }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.cors.allowed_origins).toEqual(origins);
+      expect(state.corsAllowedOrigins).toEqual(origins);
+    });
+
+    test("rejects invalid JSON for cors_allowed_origins", async () => {
+      const app = createSettingsRoute(db);
+      const res = await app.request("/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "cors_allowed_origins",
+          value: "not json",
+        }),
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error.type).toBe("validation_error");
+    });
+
+    test("rejects non-array JSON for cors_allowed_origins", async () => {
+      const app = createSettingsRoute(db);
+      const res = await app.request("/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "cors_allowed_origins",
+          value: JSON.stringify({ origin: "http://localhost:3000" }),
+        }),
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error.type).toBe("validation_error");
+    });
+
+    test("rejects origins without http(s):// prefix", async () => {
+      const app = createSettingsRoute(db);
+      const res = await app.request("/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "cors_allowed_origins",
+          value: JSON.stringify(["localhost:3000", "http://valid.com"]),
+        }),
+      });
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error.type).toBe("validation_error");
+      expect(body.error.message).toContain("localhost:3000");
+    });
+
+    test("deletes cors_enabled", async () => {
+      setSetting(db, "cors_enabled", "true");
+      cacheCorsSettings(db);
+
+      const app = createSettingsRoute(db);
+      const res = await app.request("/settings/cors_enabled", {
+        method: "DELETE",
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.cors.enabled).toBe(false);
+    });
+
+    test("deletes cors_allowed_origins", async () => {
+      setSetting(db, "cors_allowed_origins", '["http://localhost:3000"]');
+      cacheCorsSettings(db);
+
+      const app = createSettingsRoute(db);
+      const res = await app.request("/settings/cors_allowed_origins", {
+        method: "DELETE",
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.cors.allowed_origins).toEqual([]);
     });
   });
 });

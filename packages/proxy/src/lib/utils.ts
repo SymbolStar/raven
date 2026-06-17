@@ -182,6 +182,26 @@ export function cacheIPWhitelist(db: Database): void {
 }
 
 /**
+ * Load CORS settings from DB into runtime state.
+ * Called at startup and after any CORS setting change.
+ */
+export function cacheCorsSettings(db: Database): void {
+  state.corsEnabled = getSetting(db, "cors_enabled") === "true"
+
+  const originsJson = getSetting(db, "cors_allowed_origins")
+  if (originsJson) {
+    try {
+      const parsed = JSON.parse(originsJson)
+      state.corsAllowedOrigins = Array.isArray(parsed) ? parsed : []
+    } catch {
+      state.corsAllowedOrigins = []
+    }
+  } else {
+    state.corsAllowedOrigins = []
+  }
+}
+
+/**
  * Load SOCKS5 proxy settings from DB into runtime state.
  * Called at startup and after any SOCKS5 setting change.
  */
