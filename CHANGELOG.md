@@ -1,5 +1,25 @@
 # Changelog
 
+## v2.3.4
+
+### Added
+- Add configurable CORS allowed origins
+
+### Changed
+- Upgrade lucide-react 1.18.0 → 1.20.0
+- Upgrade radix-ui 1.5.0 → 1.6.0
+- Upgrade @playwright/test 1.58.2 → 1.61.0
+- Upgrade typescript-eslint 8.61.0 → 8.61.1
+- Upgrade vitest family to 4.1.9
+
+### Fixed
+- Restrict CORS origins to http/https schemes only
+- Normalize CORS origins via URL.origin before storage
+
+### Removed
+- Delete dashboard sound preview route + tests
+- Delete sound notifications feature entirely
+
 ## v2.3.3
 
 ### Added
