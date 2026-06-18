@@ -457,8 +457,18 @@ function ModelGroup({ vendor, models }: { vendor: string; models: ModelInfo[] })
 function ApiKeysSection({ keys: initialKeys }: { keys: ApiKeyPublic[] }) {
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogInstance, setDialogInstance] = useState(0);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // Remount CreateKeyDialog on every open so its internal state (name input,
+  // createdKey, error) starts fresh. Without this, the previous createdKey
+  // sticks and the second open skips the name prompt while re-showing the
+  // stale key — no new key is actually created.
+  const handleOpenChange = useCallback((open: boolean) => {
+    setDialogOpen(open);
+    if (open) setDialogInstance((n) => n + 1);
+  }, []);
 
   const handleCreated = useCallback(() => {
     setDialogOpen(false);
@@ -499,14 +509,14 @@ function ApiKeysSection({ keys: initialKeys }: { keys: ApiKeyPublic[] }) {
             Create and manage API keys for authenticating client requests
           </p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={handleOpenChange}>
           <DialogTrigger asChild>
             <Button size="sm" variant="outline" className="gap-1.5">
               <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
               Create Key
             </Button>
           </DialogTrigger>
-          <CreateKeyDialog onCreated={handleCreated} />
+          <CreateKeyDialog key={dialogInstance} onCreated={handleCreated} />
         </Dialog>
       </div>
 
