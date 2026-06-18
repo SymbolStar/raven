@@ -275,6 +275,32 @@ describe("setupCopilotToken", () => {
     expect(cacheModelsMock).toHaveBeenCalledTimes(1)
   })
 
+  test("refresh success: models refresh failure is swallowed (does not break token refresh)", async () => {
+    const fakeTimers = createFakeTimers()
+    mockCopilotTokenResponse("copilot-jwt", 1500)
+    await setupCopilotToken(fakeTimers)
+
+    cacheModelsMock.mockClear()
+    // First reject with Error to exercise instanceof branch
+    cacheModelsMock.mockRejectedValueOnce(new Error("models endpoint down"))
+    mockCopilotTokenResponse("copilot-jwt-refreshed", 1500)
+    await fakeTimers.tick(fakeTimers.timers[0]!.id)
+
+    expect(state.copilotToken).toBe("copilot-jwt-refreshed")
+    expect(cacheModelsMock).toHaveBeenCalledTimes(1)
+    // Timer remains active — refresh schedule survives the failure
+    expect(fakeTimers.timers[0]!.cleared).toBe(false)
+
+    // Now reject with a non-Error value to exercise the String(error) branch
+    cacheModelsMock.mockClear()
+    cacheModelsMock.mockRejectedValueOnce("string failure")
+    mockCopilotTokenResponse("copilot-jwt-refreshed-2", 1500)
+    await fakeTimers.tick(fakeTimers.timers[0]!.id)
+
+    expect(state.copilotToken).toBe("copilot-jwt-refreshed-2")
+    expect(cacheModelsMock).toHaveBeenCalledTimes(1)
+  })
+
   test("refresh with changed refresh_in: reschedules with new interval", async () => {
     const fakeTimers = createFakeTimers()
     mockCopilotTokenResponse("copilot-jwt", 1500)
