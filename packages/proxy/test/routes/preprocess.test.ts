@@ -492,6 +492,17 @@ describe("resolveAgainstCatalog", () => {
     expect(resolveAgainstCatalog("claude-opus-4.7-1m", catalog)).toBe("claude-opus-4.7-1m")
   })
 
+  test("falls back to base model when -1m retired but base is in catalog", () => {
+    // Copilot folded 1M context into the base model and dropped the -1m SKU.
+    const catalog = ["claude-opus-4.7", "claude-sonnet-4.6"]
+    expect(resolveAgainstCatalog("claude-opus-4.7-1m", catalog)).toBe("claude-opus-4.7")
+  })
+
+  test("prefers exact -1m over base fallback when -1m still exists", () => {
+    const catalog = ["claude-opus-4.7", "claude-opus-4.7-1m"]
+    expect(resolveAgainstCatalog("claude-opus-4.7-1m", catalog)).toBe("claude-opus-4.7-1m")
+  })
+
   test("returns input unchanged when neither exact nor -internal in catalog", () => {
     const catalog = ["claude-opus-4.6", "claude-sonnet-4.5"]
     expect(resolveAgainstCatalog("claude-opus-4.7-1m", catalog)).toBe("claude-opus-4.7-1m")

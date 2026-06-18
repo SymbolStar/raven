@@ -6,6 +6,7 @@ import { getCopilotToken } from "./../services/github/get-copilot-token"
 import { getDeviceCode } from "./../services/github/get-device-code"
 import { getGitHubUser } from "./../services/github/get-user"
 import { pollAccessToken } from "./../services/github/poll-access-token"
+import { cacheModels } from "./utils"
 
 import { HTTPError } from "./error"
 import { state } from "./state"
@@ -61,6 +62,7 @@ function scheduleTokenRefresh(
       const { token, refresh_in } = await getCopilotToken()
       state.copilotToken = token
       logger.debug("Copilot token refreshed")
+      await refreshModelsForToken()
 
       // If upstream changed refresh_in, reschedule with new interval
       const newIntervalMs = Math.max((refresh_in - 60) * 1000, MIN_REFRESH_MS)
@@ -97,6 +99,7 @@ function retryTokenRefresh(
       const { token, refresh_in } = await getCopilotToken()
       state.copilotToken = token
       logger.info("Copilot token recovered after retry")
+      await refreshModelsForToken()
       // Success — resume normal refresh schedule
       scheduleTokenRefresh(refresh_in, timers)
     } catch (retryError) {
@@ -105,6 +108,16 @@ function retryTokenRefresh(
       retryTokenRefresh(nextBackoff, originalRefreshInSeconds, retryError, timers)
     }
   }, backoff)
+}
+
+async function refreshModelsForToken(): Promise<void> {
+  try {
+    await cacheModels()
+  } catch (error) {
+    logger.warn("Failed to refresh models after Copilot token refresh", {
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
 }
 
 interface SetupGitHubTokenOptions {
