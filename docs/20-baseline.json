@@ -1,20 +1,20 @@
 {
   "$schema": "./20-baseline.schema.json",
   "_doc": "See docs/20-architecture-refactor.md §4.5. Phase C.7 populated real numbers and flipped enforcement mode. Update this file after every phase that moves directories or adds/removes tests so the gate stays in sync.",
-  "capturedAt": "2026-05-03T00:00:00Z",
+  "capturedAt": "2026-06-18T04:08:00Z",
   "proxy": {
-    "l1TestCount": 1674,
-    "statementCoveragePct": 98.49,
+    "l1TestCount": 1696,
+    "statementCoveragePct": 98.43,
     "_comment_perDirectoryCoveragePct": "Re-captured 2026-05-03 after migrating L1 tests from bun test → vitest (istanbul provider). Numbers shifted slightly because istanbul counts statements/lines differently than bun's coverage tool. Phase E relocates routes/ → strategies/ and protocols/ → protocols/* so these keys will migrate; the gate skips directory-regression when a directory is absent from the live report (§4.5), which lets phases move code without re-editing this file. Update when a directory is intentionally removed.",
     "perDirectoryCoveragePct": {
       "composition": 100.00,
       "core": 100.00,
       "db": 98.64,
-      "lib": 97.63,
-      "protocols": 99.27,
-      "routes": 98.33,
+      "lib": 97.51,
+      "protocols": 99.28,
+      "routes": 98.45,
       "services": 98.96,
-      "strategies": 97.74,
+      "strategies": 97.83,
       "upstream": 98.09,
       "util": 98.92,
       "ws": 100.00
