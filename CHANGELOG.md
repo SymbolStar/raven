@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.3.5
+
+### Changed
+- Cover refreshModelsForToken catch branch
+- Override undici to ^7.28.0 to clear CVEs
+- Refresh coverage baseline after sound feature removal
+
+### Fixed
+- Resolve 1m context models against live Copilot catalog
+- Reset create-key dialog state on every open
+
 ## v2.3.4
 
 ### Added
