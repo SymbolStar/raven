@@ -310,7 +310,7 @@ export function ProvidersContent({ strategies, upstreams, routingPaths }: Provid
   return (
     <div className="space-y-4">
       {/* Tab selector */}
-      <div className="flex gap-1 rounded-lg bg-muted/50 p-1 w-fit">
+      <div className="flex gap-1 rounded-lg bg-background p-1 w-fit">
         {TABS.map((tab) => (
           <button
             key={tab.id}
@@ -323,7 +323,7 @@ export function ProvidersContent({ strategies, upstreams, routingPaths }: Provid
             className={cn(
               "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
               activeTab === tab.id
-                ? "bg-background text-foreground shadow-sm"
+                ? "bg-secondary text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
