@@ -264,9 +264,9 @@ export function createUpstreamsRoute(db: Database): Hono {
     // Refresh state so new provider is immediately routable
     cacheProviders(db)
 
-    // Probe models endpoint in background (don't block response)
-    // Note: we don't need to refresh cache after probe since supports_models_endpoint
-    // is only used by the health check endpoint, not the routing engine
+    // Probe models endpoint in background (don't block response).
+    // probeModelsEndpoint refreshes the runtime cache after persisting support
+    // and auth_style so subsequent requests use the detected state.
     const newRow = db
       .query("SELECT * FROM providers WHERE id = $id")
       .get({ $id: provider.id }) as ProviderRecord | null
@@ -351,8 +351,12 @@ export function createUpstreamsRoute(db: Database): Hono {
     // Refresh state
     cacheProviders(db)
 
-    // Re-probe if base_url or api_key changed
-    if (input.base_url !== undefined || input.api_key !== undefined) {
+    // Re-probe if endpoint, credential, or protocol changed.
+    if (
+      input.base_url !== undefined ||
+      input.api_key !== undefined ||
+      input.format !== undefined
+    ) {
       // Get full record to access api_key and proxy settings
       const row = db
         .query("SELECT * FROM providers WHERE id = $id")

@@ -1066,6 +1066,44 @@ describe("upstreams API", () => {
       expect(updated?.auth_style).toBeNull()
     })
 
+    test("changing format clears auth_style and re-probes models endpoint", async () => {
+      const app = makeApp(db)
+      const provider = createProvider(db, {
+        name: "FormatSwitcher",
+        base_url: "https://format.example",
+        format: "anthropic",
+        api_key: "sk-format",
+        model_patterns: ["switch-*"],
+      })
+      db.query("UPDATE providers SET auth_style = 'bearer', supports_models_endpoint = 0 WHERE id = $id")
+        .run({ $id: provider.id })
+
+      fetchSpy.mockResolvedValue(
+        new Response(JSON.stringify({ data: [{ id: "switch-model" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+
+      const res = await app.request(req("PUT", `/api/upstreams/${provider.id}`, {
+        format: "openai",
+      }))
+      expect(res.status).toBe(200)
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+      const headers = fetchSpy.mock.calls[0]?.[1]?.headers as Record<string, string>
+      expect(headers.Authorization).toBe("Bearer sk-format")
+      expect("x-api-key" in headers).toBe(false)
+
+      await Promise.resolve()
+      await Promise.resolve()
+
+      const updated = getProvider(db, provider.id)
+      expect(updated?.format).toBe("openai")
+      expect(updated?.auth_style).toBeNull()
+      expect(updated?.supports_models_endpoint).toBe(true)
+    })
+
     test("touching only name keeps stored auth_style", async () => {
       const app = makeApp(db)
       const provider = createProvider(db, {
