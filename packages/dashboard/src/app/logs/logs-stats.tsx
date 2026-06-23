@@ -574,7 +574,7 @@ export function LogsStats({ events }: LogsStatsProps) {
         <button
           type="button"
           onClick={() => setMobileExpanded(!mobileExpanded)}
-          className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium hover:bg-muted/50 transition-colors"
+          className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium hover:bg-background/50 transition-colors"
         >
           <span className="flex items-center gap-2">
             <Activity className="size-4 text-muted-foreground" />
