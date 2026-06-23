@@ -116,7 +116,7 @@ function DistributionBar({ data }: { data: BreakdownEntry[] }) {
   return (
     <div className="space-y-2">
       {/* Stacked bar */}
-      <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted/50">
+      <div className="flex h-3 w-full overflow-hidden rounded-full bg-background">
         {data.map((entry, i) => {
           const pct = (entry.count / total) * 100;
           if (pct < 0.5) return null;

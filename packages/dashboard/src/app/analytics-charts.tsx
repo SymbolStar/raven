@@ -389,7 +389,7 @@ function BreakdownBar({ title, data, limit = 5 }: { title: string; data: Breakdo
         {top.map((entry) => (
           <div key={entry.key} className="flex items-center gap-2">
             <span className="text-meta w-24 truncate shrink-0">{entry.key || "(empty)"}</span>
-            <div className="flex-1 h-5 bg-muted rounded-sm overflow-hidden">
+            <div className="flex-1 h-5 bg-background rounded-sm overflow-hidden">
               <div
                 className="h-full bg-primary/60 rounded-sm transition-all"
                 style={{ width: `${(entry.count / maxCount) * 100}%` }}
