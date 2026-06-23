@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.3.7
+
+### Fixed
+- Restore route coverage after auth_style refactor
+
 ## v2.3.6
 
 ### Added
