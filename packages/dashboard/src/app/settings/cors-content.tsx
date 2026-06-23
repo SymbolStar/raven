@@ -128,7 +128,7 @@ export function CorsContent({ data }: CorsContentProps) {
         Control which origins can make cross-origin requests to the proxy.
       </p>
 
-      <div className="rounded-widget border border-border/30 bg-secondary/50 p-4 space-y-4">
+      <div className="rounded-card bg-secondary p-4 space-y-4">
         {/* Enable/Disable toggle */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
