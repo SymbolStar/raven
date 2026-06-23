@@ -10,6 +10,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import { JsonBlock } from "@/components/ui/json-block";
 import type { ExtendedRequestRecord } from "@/lib/types";
 import { formatLatency } from "@/lib/chart-config";
 
@@ -38,6 +39,11 @@ function copyToClipboard(text: string) {
       /* silently fail if clipboard permission denied */
     });
   }
+}
+
+function isJsonLike(value: string): boolean {
+  const trimmed = value.trimStart();
+  return trimmed.startsWith("{") || trimmed.startsWith("[");
 }
 
 function DetailRow({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
@@ -183,7 +189,16 @@ export function RequestDetailDrawer({ request, open, onOpenChange }: RequestDeta
             <DetailRow label="Account" value={request.account_name || null} />
             <DetailRow label="Client" value={request.client_name || null} />
             <DetailRow label="Version" value={request.client_version} />
-            <DetailRow label="Session" value={request.session_id || null} mono />
+            {request.session_id && (
+              isJsonLike(request.session_id) ? (
+                <div className="py-1.5">
+                  <div className="text-xs text-muted-foreground mb-1">Session</div>
+                  <JsonBlock value={request.session_id} />
+                </div>
+              ) : (
+                <DetailRow label="Session" value={request.session_id} mono />
+              )
+            )}
           </section>
 
           {/* Response Metadata */}

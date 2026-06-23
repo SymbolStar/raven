@@ -176,6 +176,31 @@ describe("RequestDetailDrawer", () => {
     expect(screen.getByText("5")).toBeDefined();
   });
 
+  it("renders short session id as a plain detail row", () => {
+    const req = makeExtendedRecord({ session_id: "sess_abc123" });
+    render(
+      <RequestDetailDrawer request={req} open={true} onOpenChange={() => {}} />,
+    );
+    expect(screen.getByText("sess_abc123")).toBeDefined();
+    // No <pre> json block should be rendered for a plain id
+    expect(document.querySelector("pre")).toBeNull();
+  });
+
+  it("renders JSON-shaped session id inside a JsonBlock", () => {
+    const req = makeExtendedRecord({
+      session_id: '{"device_id":"dev-xyz","session_id":"sess-1"}',
+    });
+    render(
+      <RequestDetailDrawer request={req} open={true} onOpenChange={() => {}} />,
+    );
+    const pre = document.querySelector("pre");
+    expect(pre).not.toBeNull();
+    // pretty-printed multi-line content
+    expect(pre?.textContent).toContain('"device_id"');
+    expect(pre?.textContent).toContain("\n");
+    expect(screen.getByLabelText("Copy JSON")).toBeDefined();
+  });
+
   it("shows link to live logs", () => {
     const req = makeExtendedRecord({ id: "req-xyz" });
     render(
