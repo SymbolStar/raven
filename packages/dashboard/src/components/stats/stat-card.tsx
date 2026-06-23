@@ -88,7 +88,7 @@ export function StatCard({
   if (variant === "compact") {
     return (
       <div className={cn("flex items-center gap-2.5 rounded-lg bg-secondary p-2.5", className)}>
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-background">
           <Icon className="size-3.5 text-muted-foreground" />
         </div>
         <div className="min-w-0">
