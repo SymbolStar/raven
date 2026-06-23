@@ -10,7 +10,7 @@ interface CodeBlockProps {
 
 export function CodeBlock({ code, className }: CodeBlockProps) {
   return (
-    <div className={cn("relative group rounded-widget bg-secondary", className)}>
+    <div className={cn("relative group rounded-widget bg-background", className)}>
       <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
         <CopyButton value={code} />
       </div>
