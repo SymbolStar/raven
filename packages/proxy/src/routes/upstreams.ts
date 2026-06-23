@@ -344,6 +344,7 @@ export function createUpstreamsRoute(db: Database): Hono {
     }
 
     const updated = updateProvider(db, id, input)
+    /* istanbul ignore if -- race-condition only reachable if provider is deleted between getProvider above and updateProvider here */
     if (!updated) {
       return c.json({ error: { message: "Provider not found" } }, 404)
     }
@@ -402,120 +403,54 @@ export function createUpstreamsRoute(db: Database): Hono {
     const baseUrl = row.base_url.replace(/\/+$/, "")
     const modelsUrl = `${baseUrl}/v1/models`
 
-    try {
-      const compiled = compileProvider(row)
-      const proxyUrl = compiled ? getProxyUrl(compiled, state) : undefined
-      let firstError: unknown = null
-      const tryAuth = async (style: ProviderAuthStyle): Promise<Response | null> => {
-        try {
-          return await fetch(modelsUrl, {
-            headers: buildAuthHeaders(row.api_key, style),
-            signal: AbortSignal.timeout(10000),
-            ...(proxyUrl ? { proxy: proxyUrl } : {}),
-          } as RequestInit)
-        } catch (err) {
-          if (firstError === null) firstError = err
-          return null
-        }
+    const compiled = compileProvider(row)
+    const proxyUrl = compiled ? getProxyUrl(compiled, state) : undefined
+    let firstError: unknown = null
+    const tryAuth = async (style: ProviderAuthStyle): Promise<Response | null> => {
+      try {
+        return await fetch(modelsUrl, {
+          headers: buildAuthHeaders(row.api_key, style),
+          signal: AbortSignal.timeout(10000),
+          ...(proxyUrl ? { proxy: proxyUrl } : {}),
+        } as RequestInit)
+      } catch (err) {
+        if (firstError === null) firstError = err
+        return null
       }
+    }
 
-      // Determine attempt order.
-       // - OpenAI runtime only sends Bearer (custom-openai.ts), so health
-       //   check must NOT mark provider healthy via x-api-key — that would
-       //   mislead the dashboard.
-       // - Anthropic providers: honor stored auth_style if present, else try
-       //   x-api-key first (Anthropic standard) with Bearer fallback for
-       //   Manifest-style forks.
-      const order: ProviderAuthStyle[] =
-        row.format === "openai"
-          ? ["bearer"]
-          : row.auth_style === "bearer"
-            ? ["bearer", "x-api-key"]
-            : row.auth_style === "x-api-key"
-              ? ["x-api-key", "bearer"]
-              : ["x-api-key", "bearer"]
+    // Determine attempt order.
+    // - OpenAI runtime only sends Bearer (custom-openai.ts), so health
+    //   check must NOT mark provider healthy via x-api-key — that would
+    //   mislead the dashboard.
+    // - Anthropic providers: honor stored auth_style if present, else try
+    //   x-api-key first (Anthropic standard) with Bearer fallback for
+    //   Manifest-style forks.
+    const order: ProviderAuthStyle[] =
+      row.format === "openai"
+        ? ["bearer"]
+        : row.auth_style === "bearer"
+          ? ["bearer", "x-api-key"]
+          : row.auth_style === "x-api-key"
+            ? ["x-api-key", "bearer"]
+            : ["x-api-key", "bearer"]
 
-      let res: Response | null = null
-      let detected: ProviderAuthStyle | null = null
-      for (const style of order) {
-        const r = await tryAuth(style)
-        if (r && r.ok) {
-          res = r
-          detected = style
-          break
-        }
-        // Keep last response for error reporting if none succeed
-        if (r) res = r
+    let res: Response | null = null
+    let detected: ProviderAuthStyle | null = null
+    for (const style of order) {
+      const r = await tryAuth(style)
+      if (r && r.ok) {
+        res = r
+        detected = style
+        break
       }
+      // Keep last response for error reporting if none succeed
+      if (r) res = r
+    }
 
-      // No response at all — treat as connection failure (test contract).
-      if (!res && firstError !== null) {
-        const message = firstError instanceof Error ? firstError.message : "Unknown error"
-        updateProviderModelsSupport(db, id, false)
-        cacheProviders(db)
-        return c.json(
-          {
-            error: {
-              message: `Failed to connect: ${message}`,
-              type: "connection_error",
-            },
-            healthy: false,
-            supports_models_endpoint: false,
-          },
-          502,
-        )
-      }
-
-      if (!res || !res.ok) {
-        const text = res ? await res.text().catch(() => "") : ""
-        const status = res?.status ?? 0
-        updateProviderModelsSupport(db, id, false)
-        cacheProviders(db)
-        return c.json(
-          {
-            error: {
-              message: `Upstream returned ${status}: ${text.slice(0, 200)}`,
-              type: "upstream_error",
-            },
-            healthy: false,
-            supports_models_endpoint: false,
-          },
-          502,
-        )
-      }
-
-      const data = (await res.json()) as { data?: Array<{ id: string; owned_by?: string }> }
-      const models = data.data ?? []
-
-      // Update DB: models endpoint supported, persist detected auth style
-      updateProviderModelsSupport(db, id, true)
-      if (detected !== null && row.format === "anthropic") {
-        updateProviderAuthStyle(db, id, detected)
-      }
-      // Refresh runtime cache so messages/ uses the new auth_style immediately.
-      cacheProviders(db)
-
-      // Group models by owned_by
-      const grouped: Record<string, string[]> = {}
-      for (const model of models) {
-        const owner = model.owned_by ?? "unknown"
-        if (!grouped[owner]) grouped[owner] = []
-        grouped[owner].push(model.id)
-      }
-
-      // Sort models within each group
-      for (const owner of Object.keys(grouped)) {
-        grouped[owner]!.sort()
-      }
-
-      return c.json({
-        healthy: true,
-        total: models.length,
-        models: grouped,
-      })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error"
-      // Update DB: models endpoint not supported (connection error)
+    // No response at all — treat as connection failure (test contract).
+    if (!res && firstError !== null) {
+      const message = firstError instanceof Error ? firstError.message : "Unknown error"
       updateProviderModelsSupport(db, id, false)
       cacheProviders(db)
       return c.json(
@@ -530,6 +465,54 @@ export function createUpstreamsRoute(db: Database): Hono {
         502,
       )
     }
+
+    if (!res || !res.ok) {
+      const text = res ? await res.text().catch(() => "") : ""
+      const status = res?.status ?? 0
+      updateProviderModelsSupport(db, id, false)
+      cacheProviders(db)
+      return c.json(
+        {
+          error: {
+            message: `Upstream returned ${status}: ${text.slice(0, 200)}`,
+            type: "upstream_error",
+          },
+          healthy: false,
+          supports_models_endpoint: false,
+        },
+        502,
+      )
+    }
+
+    const data = (await res.json()) as { data?: Array<{ id: string; owned_by?: string }> }
+    const models = data.data ?? []
+
+    // Update DB: models endpoint supported, persist detected auth style
+    updateProviderModelsSupport(db, id, true)
+    if (detected !== null && row.format === "anthropic") {
+      updateProviderAuthStyle(db, id, detected)
+    }
+    // Refresh runtime cache so messages/ uses the new auth_style immediately.
+    cacheProviders(db)
+
+    // Group models by owned_by
+    const grouped: Record<string, string[]> = {}
+    for (const model of models) {
+      const owner = model.owned_by ?? "unknown"
+      if (!grouped[owner]) grouped[owner] = []
+      grouped[owner].push(model.id)
+    }
+
+    // Sort models within each group
+    for (const owner of Object.keys(grouped)) {
+      grouped[owner]!.sort()
+    }
+
+    return c.json({
+      healthy: true,
+      total: models.length,
+      models: grouped,
+    })
   })
 
   return app

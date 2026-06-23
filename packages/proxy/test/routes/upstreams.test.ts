@@ -906,6 +906,140 @@ describe("upstreams API", () => {
       initProviders(db)
     })
 
+    test("background probe on POST detects bearer for anthropic provider", async () => {
+      const app = makeApp(db)
+
+      // Bearer succeeds; x-api-key fails. The probe runs async post-POST.
+      // Use a deferred promise so the test can await probe completion deterministically.
+      const fetchPromises: Promise<Response>[] = []
+      fetchSpy.mockImplementation(((_url: string, init?: { headers?: Record<string, string> }) => {
+        const h = init?.headers ?? {}
+        const auth = h.Authorization ?? h.authorization
+        const p = auth?.startsWith("Bearer ")
+          ? Promise.resolve(new Response(JSON.stringify({ data: [{ id: "auto" }] }), { status: 200 }))
+          : Promise.resolve(new Response("nope", { status: 401 }))
+        fetchPromises.push(p)
+        return p
+      }) as unknown as typeof fetch)
+
+      const res = await app.request(req("POST", "/api/upstreams", {
+        name: "ManifestPost",
+        base_url: "https://manifest.example",
+        format: "anthropic",
+        api_key: "mnfst_x",
+        model_patterns: ["auto"],
+      }))
+      expect(res.status).toBe(201)
+      const { id } = await res.json() as { id: string }
+
+      // Wait for the background probe to settle (both fetches resolved).
+      await Promise.all(fetchPromises)
+      // Yield a tick so the DB write after `await tryAuth(...)` lands before assertion.
+      await new Promise((r) => setTimeout(r, 5))
+
+      const stored = getProvider(db, id)
+      expect(stored?.auth_style).toBe("bearer")
+      expect(stored?.supports_models_endpoint).toBe(true)
+    })
+
+    test("background probe on POST detects x-api-key for anthropic provider", async () => {
+      const app = makeApp(db)
+
+      const fetchPromises: Promise<Response>[] = []
+      fetchSpy.mockImplementation(((_url: string, init?: { headers?: Record<string, string> }) => {
+        const h = init?.headers ?? {}
+        const hasKey = "x-api-key" in h || "X-Api-Key" in h
+        const p = hasKey
+          ? Promise.resolve(new Response(JSON.stringify({ data: [{ id: "claude-3" }] }), { status: 200 }))
+          : Promise.resolve(new Response("nope", { status: 401 }))
+        fetchPromises.push(p)
+        return p
+      }) as unknown as typeof fetch)
+
+      const res = await app.request(req("POST", "/api/upstreams", {
+        name: "AnthropicDirectPost",
+        base_url: "https://api.anthropic.com",
+        format: "anthropic",
+        api_key: "sk-anth",
+        model_patterns: ["claude-*"],
+      }))
+      expect(res.status).toBe(201)
+      const { id } = await res.json() as { id: string }
+
+      await Promise.all(fetchPromises)
+      await new Promise((r) => setTimeout(r, 5))
+
+      const stored = getProvider(db, id)
+      expect(stored?.auth_style).toBe("x-api-key")
+      expect(stored?.supports_models_endpoint).toBe(true)
+    })
+
+    test("probe disambiguates auth_style from 401 vs non-401 even when /v1/models is missing", async () => {
+      // Manifest-like: returns 401 on missing Authorization, 404 with Bearer
+      // (e.g. endpoint not implemented). We should still record auth_style=bearer.
+      const app = makeApp(db)
+
+      const fetchPromises: Promise<Response>[] = []
+      fetchSpy.mockImplementation(((_url: string, init?: { headers?: Record<string, string> }) => {
+        const h = init?.headers ?? {}
+        const auth = h.Authorization ?? h.authorization
+        const p = auth?.startsWith("Bearer ")
+          ? Promise.resolve(new Response("not found", { status: 404 }))
+          : Promise.resolve(new Response("missing auth", { status: 401 }))
+        fetchPromises.push(p)
+        return p
+      }) as unknown as typeof fetch)
+
+      const res = await app.request(req("POST", "/api/upstreams", {
+        name: "ManifestNoModels",
+        base_url: "https://manifest-no-models.example",
+        format: "anthropic",
+        api_key: "mnfst_y",
+        model_patterns: ["auto"],
+      }))
+      expect(res.status).toBe(201)
+      const { id } = await res.json() as { id: string }
+
+      await Promise.all(fetchPromises)
+      await new Promise((r) => setTimeout(r, 5))
+
+      const stored = getProvider(db, id)
+      // /v1/models isn't reachable, but bearer is the right header.
+      expect(stored?.supports_models_endpoint).toBe(false)
+      expect(stored?.auth_style).toBe("bearer")
+    })
+
+    test("probe disambiguates auth_style when Bearer is rejected and x-api-key returns non-401", async () => {
+      const app = makeApp(db)
+
+      const fetchPromises: Promise<Response>[] = []
+      fetchSpy.mockImplementation(((_url: string, init?: { headers?: Record<string, string> }) => {
+        const h = init?.headers ?? {}
+        const hasKey = "x-api-key" in h || "X-Api-Key" in h
+        const p = hasKey
+          ? Promise.resolve(new Response("not found", { status: 404 }))
+          : Promise.resolve(new Response("missing key", { status: 401 }))
+        fetchPromises.push(p)
+        return p
+      }) as unknown as typeof fetch)
+
+      const res = await app.request(req("POST", "/api/upstreams", {
+        name: "AnthropicNoModels",
+        base_url: "https://anth-no-models.example",
+        format: "anthropic",
+        api_key: "sk-anth-2",
+        model_patterns: ["claude-2"],
+      }))
+      expect(res.status).toBe(201)
+      const { id } = await res.json() as { id: string }
+
+      await Promise.all(fetchPromises)
+      await new Promise((r) => setTimeout(r, 5))
+
+      const stored = getProvider(db, id)
+      expect(stored?.supports_models_endpoint).toBe(false)
+      expect(stored?.auth_style).toBe("x-api-key")
+    })
     test("anthropic provider: probe detects x-api-key and persists auth_style", async () => {
       const app = makeApp(db)
       const provider = createProvider(db, {
