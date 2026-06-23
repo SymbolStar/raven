@@ -63,7 +63,7 @@ export function RpmChart({ data, gradientId = "rpmFill" }: RpmChartProps) {
   const summary = `Requests per minute chart. ${total} total requests over ${data.length} minutes. Peak: ${peak} requests/min.`;
 
   return (
-    <div className="bg-secondary rounded-lg p-3">
+    <div className="bg-secondary rounded-card p-3">
       <h4 className="text-xs font-medium text-muted-foreground mb-2">
         Requests / min
       </h4>

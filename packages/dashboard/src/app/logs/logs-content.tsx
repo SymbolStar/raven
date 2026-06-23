@@ -260,7 +260,7 @@ function SystemEventCard({ event }: { event: LogEvent }) {
       </div>
       <div
         className={cn(
-          "flex-1 rounded-lg bg-secondary p-3 font-mono text-xs",
+          "flex-1 rounded-card bg-secondary p-3 font-mono text-xs",
           event.level === "error" && "border border-destructive/30",
           event.level === "warn" && "border border-warning/30",
         )}
@@ -415,7 +415,7 @@ function RequestCard({
       </div>
       <div
         className={cn(
-          "flex-1 rounded-lg bg-secondary overflow-hidden",
+          "flex-1 rounded-card bg-secondary overflow-hidden",
           isError && "border border-destructive/30",
         )}
       >

@@ -54,7 +54,7 @@ export function ModelDistribution({ data }: ModelDistributionProps) {
   const summary = `Model distribution chart. ${data.length} models, ${total} total requests. Most used: ${topModel?.model ?? "none"} with ${topModel?.count ?? 0} requests.`;
 
   return (
-    <div className="bg-secondary rounded-lg p-3">
+    <div className="bg-secondary rounded-card p-3">
       <h4 className="text-xs font-medium text-muted-foreground mb-2">
         Models
       </h4>

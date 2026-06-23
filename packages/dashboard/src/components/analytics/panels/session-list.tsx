@@ -80,7 +80,7 @@ interface SessionListProps {
 export function SessionList({ sessions }: SessionListProps) {
   if (sessions.length === 0) return null;
   return (
-    <div className="bg-secondary rounded-lg p-3">
+    <div className="bg-secondary rounded-card p-3">
       <h4 className="text-xs font-medium text-muted-foreground mb-2">
         Sessions
         <span className="ml-1 font-normal text-muted-foreground/60">

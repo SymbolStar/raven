@@ -570,7 +570,7 @@ export function LogsStats({ events }: LogsStatsProps) {
       </div>
 
       {/* ── Mobile: collapsible strip above stream ── */}
-      <div className="lg:hidden shrink-0 rounded-lg bg-secondary overflow-hidden">
+      <div className="lg:hidden shrink-0 rounded-card bg-secondary overflow-hidden">
         <button
           type="button"
           onClick={() => setMobileExpanded(!mobileExpanded)}

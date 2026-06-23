@@ -69,7 +69,7 @@ function InfoRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg bg-secondary p-3">
+    <div className="flex items-center gap-3 rounded-card bg-secondary p-3">
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-widget bg-primary/10">
         <Icon className="h-4 w-4 text-primary" strokeWidth={1.5} />
       </div>
@@ -145,7 +145,7 @@ function QuotaCard({ id, snapshot }: { id: string; snapshot: CopilotQuotaSnapsho
     .replace(/\b\w/g, (c) => c.toUpperCase());
 
   return (
-    <div className="flex items-center gap-4 rounded-lg bg-secondary p-4">
+    <div className="flex items-center gap-4 rounded-card bg-secondary p-4">
       <QuotaRing percent={snapshot.percent_remaining} unlimited={snapshot.unlimited} />
       <div className="min-w-0 flex-1 space-y-1">
         <p className="text-sm font-medium">{label}</p>

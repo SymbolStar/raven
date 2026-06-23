@@ -64,7 +64,7 @@ export function ConcurrencyChart({ data, gradientId = "concurrencyFill" }: Concu
   const summary = `Parallel sessions chart over ${data.length} minutes. Current: ${current} sessions. Peak: ${peak} sessions.`;
 
   return (
-    <div className="bg-secondary rounded-lg p-3">
+    <div className="bg-secondary rounded-card p-3">
       <h4 className="text-xs font-medium text-muted-foreground mb-2">
         Parallel Sessions
         <span className="ml-1 font-normal text-muted-foreground/60">

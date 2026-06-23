@@ -60,7 +60,7 @@ export function TimingChart({ data }: TimingChartProps) {
   const summary = `Request timing chart showing last ${data.length} requests. Average duration: ${fmtLatency(avgLatency)}. Peak: ${fmtLatency(peak)}.`;
 
   return (
-    <div className="bg-secondary rounded-lg p-3">
+    <div className="bg-secondary rounded-card p-3">
       <h4 className="text-xs font-medium text-muted-foreground mb-2">
         Timing
         <span className="ml-1 font-normal text-muted-foreground/60">
