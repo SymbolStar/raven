@@ -265,7 +265,7 @@ function ClaudeCodeGuide({ baseUrl }: { baseUrl: string }) {
         env block:
       </p>
       <CodeBlock code={envConfig} className="text-xs" />
-      <div className="flex items-start gap-2 text-xs text-muted-foreground bg-secondary/30 rounded-widget p-3">
+      <div className="flex items-start gap-2 text-xs text-muted-foreground bg-background rounded-widget p-3">
         <ChevronRight className="h-3.5 w-3.5 shrink-0 mt-0.5" strokeWidth={1.5} />
         <span>
           Replace <code className="bg-secondary/70 px-1 rounded">rk-...</code> with your API key from the Keys tab.

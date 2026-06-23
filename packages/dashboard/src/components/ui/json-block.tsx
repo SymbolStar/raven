@@ -137,7 +137,7 @@ export function JsonBlock({ value, maxHeightClass = "max-h-48", className }: Jso
   };
 
   return (
-    <div className={cn("relative rounded-md border border-border/60 bg-muted/40", className)}>
+    <div className={cn("relative rounded-widget border border-border/50 bg-secondary", className)}>
       <Button
         type="button"
         variant="ghost"
