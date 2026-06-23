@@ -439,7 +439,7 @@ function ModelGroup({ vendor, models }: { vendor: string; models: ModelInfo[] })
         <Table>
           <TableBody>
             {models.map((model) => (
-              <TableRow key={model.id} className="group cursor-pointer hover:bg-accent/50" onClick={() => navigator.clipboard.writeText(model.id)} title="Click to copy">
+              <TableRow key={model.id} className="group cursor-pointer" onClick={() => navigator.clipboard.writeText(model.id)} title="Click to copy">
                 <TableCell className="py-2">
                   <code className="font-mono text-xs">{model.id}</code>
                 </TableCell>
