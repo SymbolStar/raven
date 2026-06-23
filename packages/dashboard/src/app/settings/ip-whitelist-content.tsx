@@ -163,7 +163,7 @@ export function IPWhitelistContent({ data }: IPWhitelistContentProps) {
         </div>
 
         {/* Trust proxy toggle */}
-        <div className="rounded border border-border/30 bg-background/50 p-3 space-y-2">
+        <div className="rounded bg-background p-3 space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex-1 min-w-0">
               <Label className="text-sm font-medium cursor-pointer">
@@ -204,7 +204,7 @@ export function IPWhitelistContent({ data }: IPWhitelistContentProps) {
               {ranges.map((range, index) => (
                 <div
                   key={index}
-                  className="flex items-center gap-2 rounded border border-border/30 bg-background/50 px-3 py-1.5"
+                  className="flex items-center gap-2 rounded bg-background px-3 py-1.5"
                 >
                   <code className="flex-1 text-xs font-mono">{range}</code>
                   <Button

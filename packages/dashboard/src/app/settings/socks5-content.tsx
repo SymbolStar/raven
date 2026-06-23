@@ -224,7 +224,7 @@ export function Socks5Content({ data }: Socks5ContentProps) {
         </div>
 
         {/* Connection settings */}
-        <div className="rounded border border-border/30 bg-background/50 p-3 space-y-3">
+        <div className="rounded bg-background p-3 space-y-3">
           <p className="text-xs font-medium text-muted-foreground">
             Connection
           </p>
@@ -343,7 +343,7 @@ export function Socks5Content({ data }: Socks5ContentProps) {
         </div>
 
         {/* Upstream routing */}
-        <div className="rounded border border-border/30 bg-background/50 p-3 space-y-3">
+        <div className="rounded bg-background p-3 space-y-3">
           <p className="text-xs font-medium text-muted-foreground">
             Upstream Routing
           </p>

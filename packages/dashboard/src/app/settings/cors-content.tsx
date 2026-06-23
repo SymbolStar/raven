@@ -154,7 +154,7 @@ export function CorsContent({ data }: CorsContentProps) {
               {origins.map((origin, index) => (
                 <div
                   key={index}
-                  className="flex items-center gap-2 rounded border border-border/30 bg-background/50 px-3 py-1.5"
+                  className="flex items-center gap-2 rounded bg-background px-3 py-1.5"
                 >
                   <code className="flex-1 text-xs font-mono">{origin}</code>
                   <Button
