@@ -3,6 +3,7 @@ import { Hono } from "hono"
 import { state } from "../lib/state"
 import { cacheModels } from "../lib/utils"
 import { getProxyUrl } from "../lib/socks5-bridge"
+import { authStyleAttempts, buildAuthHeaders } from "../lib/auth-headers"
 import type { CompiledProvider } from "../db/providers"
 
 export interface ConnectionInfoRouteOptions {
@@ -20,47 +21,36 @@ interface ModelInfo {
  * Returns model IDs on success, empty array on failure.
  */
 async function fetchUpstreamModels(provider: CompiledProvider): Promise<string[]> {
-  try {
-    const baseUrl = provider.base_url.replace(/\/+$/, "")
-    const url = `${baseUrl}/v1/models`
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    }
-    if (provider.api_key) {
-      // Honor stored auth_style (set by probe); otherwise default to
-      // Bearer for openai, x-api-key for anthropic.
-      const style =
-        provider.auth_style ??
-        (provider.format === "anthropic" ? "x-api-key" : "bearer")
-      if (style === "bearer") {
-        headers["Authorization"] = `Bearer ${provider.api_key}`
-      } else {
-        headers["x-api-key"] = provider.api_key
-        headers["anthropic-version"] = "2023-06-01"
-      }
-    }
+  const baseUrl = provider.base_url.replace(/\/+$/, "")
+  const url = `${baseUrl}/v1/models`
+  const proxyUrl = getProxyUrl(provider, state)
 
-    const proxyUrl = getProxyUrl(provider, state)
-    const response = await fetch(url, {
-      method: "GET",
-      headers,
-      signal: AbortSignal.timeout(5000), // 5s timeout
-      ...(proxyUrl ? { proxy: proxyUrl } : {}),
-    } as RequestInit)
+  const attempts = provider.api_key
+    ? authStyleAttempts(provider.format, provider.auth_style)
+    : [null]
 
-    if (!response.ok) {
-      return []
+  for (const style of attempts) {
+    const headers: Record<string, string> = style && provider.api_key
+      ? buildAuthHeaders(provider.api_key, style)
+      : { "Content-Type": "application/json" }
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers,
+        signal: AbortSignal.timeout(5000),
+        ...(proxyUrl ? { proxy: proxyUrl } : {}),
+      } as RequestInit)
+      if (!response.ok) continue
+
+      const data = await response.json() as { data?: Array<{ id: string }> }
+      if (!data.data || !Array.isArray(data.data)) return []
+
+      return data.data.map((m) => m.id)
+    } catch {
+      // Try next style
     }
-
-    const data = await response.json() as { data?: Array<{ id: string }> }
-    if (!data.data || !Array.isArray(data.data)) {
-      return []
-    }
-
-    return data.data.map((m) => m.id)
-  } catch {
-    return []
   }
+  return []
 }
 
 /**

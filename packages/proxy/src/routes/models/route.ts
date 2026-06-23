@@ -4,6 +4,7 @@ import { extractErrorDetails, forwardError } from "./../../lib/error"
 import { state } from "./../../lib/state"
 import { cacheModels } from "./../../lib/utils"
 import { getProxyUrl } from "./../../lib/socks5-bridge"
+import { authStyleAttempts, buildAuthHeaders } from "./../../lib/auth-headers"
 import { logEmitter } from "./../../util/log-emitter"
 import { generateRequestId } from "./../../util/id"
 import { deriveClientIdentity } from "./../../util/client-identity"
@@ -54,49 +55,42 @@ function toPositiveInt(v: unknown): number | null {
  * Returns model info with context limits on success, empty array on failure.
  */
 async function fetchUpstreamModels(provider: CompiledProvider): Promise<UpstreamModelInfo[]> {
-  try {
-    const baseUrl = provider.base_url.replace(/\/+$/, "")
-    const url = `${baseUrl}/v1/models`
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    }
-    if (provider.api_key) {
-      const style =
-        provider.auth_style ??
-        (provider.format === "anthropic" ? "x-api-key" : "bearer")
-      if (style === "bearer") {
-        headers["Authorization"] = `Bearer ${provider.api_key}`
-      } else {
-        headers["x-api-key"] = provider.api_key
-        headers["anthropic-version"] = "2023-06-01"
-      }
-    }
+  const baseUrl = provider.base_url.replace(/\/+$/, "")
+  const url = `${baseUrl}/v1/models`
+  const proxyUrl = getProxyUrl(provider, state)
 
-    const proxyUrl = getProxyUrl(provider, state)
-    const response = await fetch(url, {
-      method: "GET",
-      headers,
-      signal: AbortSignal.timeout(5000), // 5s timeout
-      ...(proxyUrl ? { proxy: proxyUrl } : {}),
-    } as RequestInit)
+  const attempts = provider.api_key
+    ? authStyleAttempts(provider.format, provider.auth_style)
+    : [null]
 
-    if (!response.ok) {
-      return []
+  for (const style of attempts) {
+    const headers: Record<string, string> = style && provider.api_key
+      ? buildAuthHeaders(provider.api_key, style)
+      : { "Content-Type": "application/json" }
+
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers,
+        signal: AbortSignal.timeout(5000),
+        ...(proxyUrl ? { proxy: proxyUrl } : {}),
+      } as RequestInit)
+
+      if (!response.ok) continue
+
+      const data = await response.json() as { data?: Array<Record<string, unknown>> }
+      if (!data.data || !Array.isArray(data.data)) return []
+
+      return data.data.map((m) => ({
+        id: m.id as string,
+        context_length: toPositiveInt(m.context_length ?? m.max_model_len ?? m.max_context_length ?? m.max_input_tokens),
+        max_completion_tokens: toPositiveInt(m.max_completion_tokens ?? m.max_output_tokens ?? m.max_tokens),
+      }))
+    } catch {
+      // Try next style
     }
-
-    const data = await response.json() as { data?: Array<Record<string, unknown>> }
-    if (!data.data || !Array.isArray(data.data)) {
-      return []
-    }
-
-    return data.data.map((m) => ({
-      id: m.id as string,
-      context_length: toPositiveInt(m.context_length ?? m.max_model_len ?? m.max_context_length ?? m.max_input_tokens),
-      max_completion_tokens: toPositiveInt(m.max_completion_tokens ?? m.max_output_tokens ?? m.max_tokens),
-    }))
-  } catch {
-    return []
   }
+  return []
 }
 
 modelRoutes.get("/", async (c) => {

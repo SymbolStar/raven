@@ -623,4 +623,45 @@ describe("GET /v1/models (route wrapper)", () => {
     expect(gpt4o!.capabilities?.limits?.max_context_window_tokens).toBe(128000)
     expect(gpt4o!.capabilities?.limits?.max_output_tokens).toBe(16384)
   })
+
+  test("anthropic provider with auth_style=null falls back to Bearer after x-api-key fails", async () => {
+    // Provider was migrated from before auth_style tracking — supports_models_endpoint=1
+    // but auth_style is still null. The /v1/models fetch must try both headers
+    // so the dashboard model list still includes upstreams like Manifest.
+    setProviders([{
+      id: "manifest-id",
+      name: "Manifest",
+      base_url: "https://manifest.example",
+      format: "anthropic",
+      api_key: "mnfst_x",
+      model_patterns: JSON.stringify(["auto"]),
+      enabled: 1,
+      supports_reasoning: 0,
+      supports_models_endpoint: 1,
+      auth_style: null,
+      use_socks5: null,
+      created_at: Date.now(),
+      updated_at: Date.now(),
+    }])
+
+    fetchSpy.mockImplementation(((_url: string, init?: { headers?: Record<string, string> }) => {
+      const h = init?.headers ?? {}
+      const auth = h.Authorization ?? h.authorization
+      if (auth?.startsWith("Bearer ")) {
+        return Promise.resolve(new Response(
+          JSON.stringify({ data: [{ id: "auto", owned_by: "manifest" }] }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ))
+      }
+      return Promise.resolve(new Response("nope", { status: 401 }))
+    }) as unknown as typeof fetch)
+
+    const app = new Hono()
+    app.route("/v1/models", modelRoutes)
+    const res = await app.request("/v1/models")
+
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { data: Array<{ id: string; owned_by: string }> }
+    expect(json.data.find((m) => m.id === "auto")?.owned_by).toBe("Manifest")
+  })
 })

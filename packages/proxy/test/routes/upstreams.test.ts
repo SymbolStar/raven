@@ -961,5 +961,154 @@ describe("upstreams API", () => {
       expect(updated?.auth_style).toBe("bearer")
       expect(updated?.supports_models_endpoint).toBe(true)
     })
+
+    test("probe refreshes runtime cache so messages path picks up auth_style", async () => {
+      const app = makeApp(db)
+      const provider = createProvider(db, {
+        name: "Manifest",
+        base_url: "https://manifest.example",
+        format: "anthropic",
+        api_key: "mnfst_x",
+        model_patterns: ["auto"],
+      })
+
+      // Seed state.providers with the OLD auth_style=null so we can detect refresh.
+      state.providers = getEnabledProviders(db)
+        .map((r) => ({ ...r, auth_style: null, patterns: [{ raw: "auto", isExact: true }] }))
+
+      fetchSpy.mockImplementation(((_url: string, init?: { headers?: Record<string, string> }) => {
+        const auth = init?.headers?.Authorization ?? init?.headers?.authorization
+        if (auth?.startsWith("Bearer ")) {
+          return Promise.resolve(new Response(JSON.stringify({ data: [{ id: "auto" }] }), { status: 200 }))
+        }
+        return Promise.resolve(new Response("missing Authorization", { status: 401 }))
+      }) as unknown as typeof fetch)
+
+      const res = await app.request(req("GET", `/api/upstreams/${provider.id}/models`))
+      expect(res.status).toBe(200)
+      const cached = state.providers?.find((p) => p.id === provider.id)
+      expect(cached?.auth_style).toBe("bearer")
+    })
+
+    test("openai provider: health check does NOT fall back to x-api-key", async () => {
+      const app = makeApp(db)
+      const provider = createProvider(db, {
+        name: "OpenAiOnly",
+        base_url: "https://openai.example",
+        format: "openai",
+        api_key: "sk-bearer-only",
+        model_patterns: ["gpt-*"],
+      })
+
+      // Bearer fails, x-api-key would succeed if attempted — health check
+      // must NOT try x-api-key for openai providers (runtime won't either).
+      const seen: string[] = []
+      fetchSpy.mockImplementation(((_url: string, init?: { headers?: Record<string, string> }) => {
+        const h = init?.headers ?? {}
+        if ("x-api-key" in h || "X-Api-Key" in h) seen.push("x-api-key")
+        if (h.Authorization ?? h.authorization) seen.push("bearer")
+        return Promise.resolve(new Response("forbidden", { status: 401 }))
+      }) as unknown as typeof fetch)
+
+      const res = await app.request(req("GET", `/api/upstreams/${provider.id}/models`))
+      expect(res.status).toBe(502)
+      expect(seen).toEqual(["bearer"])
+      expect(seen).not.toContain("x-api-key")
+    })
+  })
+
+  describe("PUT /api/upstreams/:id auth_style reset", () => {
+    test("changing base_url clears stored auth_style", async () => {
+      const app = makeApp(db)
+      const provider = createProvider(db, {
+        name: "Manifest",
+        base_url: "https://manifest.old.example",
+        format: "anthropic",
+        api_key: "mnfst_x",
+        model_patterns: ["auto"],
+      })
+      // Simulate prior probe writing auth_style.
+      db.query("UPDATE providers SET auth_style = 'bearer' WHERE id = $id")
+        .run({ $id: provider.id })
+
+      // Re-probe will fire — make it hang so we don't race the assertion.
+      fetchSpy.mockImplementation((() => new Promise(() => {})) as unknown as typeof fetch)
+
+      const res = await app.request(req("PUT", `/api/upstreams/${provider.id}`, {
+        base_url: "https://manifest.new.example",
+      }))
+      expect(res.status).toBe(200)
+
+      const updated = getProvider(db, provider.id)
+      expect(updated?.auth_style).toBeNull()
+    })
+
+    test("changing api_key clears stored auth_style", async () => {
+      const app = makeApp(db)
+      const provider = createProvider(db, {
+        name: "Manifest",
+        base_url: "https://manifest.example",
+        format: "anthropic",
+        api_key: "mnfst_old",
+        model_patterns: ["auto"],
+      })
+      db.query("UPDATE providers SET auth_style = 'bearer' WHERE id = $id")
+        .run({ $id: provider.id })
+
+      fetchSpy.mockImplementation((() => new Promise(() => {})) as unknown as typeof fetch)
+
+      const res = await app.request(req("PUT", `/api/upstreams/${provider.id}`, {
+        api_key: "mnfst_new",
+      }))
+      expect(res.status).toBe(200)
+
+      const updated = getProvider(db, provider.id)
+      expect(updated?.auth_style).toBeNull()
+    })
+
+    test("touching only name keeps stored auth_style", async () => {
+      const app = makeApp(db)
+      const provider = createProvider(db, {
+        name: "Manifest",
+        base_url: "https://manifest.example",
+        format: "anthropic",
+        api_key: "mnfst_x",
+        model_patterns: ["auto"],
+      })
+      db.query("UPDATE providers SET auth_style = 'bearer' WHERE id = $id")
+        .run({ $id: provider.id })
+
+      const res = await app.request(req("PUT", `/api/upstreams/${provider.id}`, {
+        name: "Manifest Renamed",
+      }))
+      expect(res.status).toBe(200)
+
+      const updated = getProvider(db, provider.id)
+      expect(updated?.auth_style).toBe("bearer")
+    })
+
+    test("explicit auth_style in PUT overrides reset", async () => {
+      const app = makeApp(db)
+      const provider = createProvider(db, {
+        name: "Manifest",
+        base_url: "https://manifest.example",
+        format: "anthropic",
+        api_key: "mnfst_x",
+        model_patterns: ["auto"],
+      })
+      db.query("UPDATE providers SET auth_style = 'bearer' WHERE id = $id")
+        .run({ $id: provider.id })
+
+      fetchSpy.mockImplementation((() => new Promise(() => {})) as unknown as typeof fetch)
+
+      const res = await app.request(req("PUT", `/api/upstreams/${provider.id}`, {
+        base_url: "https://manifest.new.example",
+        auth_style: "x-api-key",
+      }))
+      expect(res.status).toBe(200)
+
+      const updated = getProvider(db, provider.id)
+      expect(updated?.auth_style).toBe("x-api-key")
+    })
   })
 })
