@@ -128,4 +128,17 @@ describe("CustomOpenAIClient (E.7)", () => {
     })
     expect(captured[0]!.proxy).toBe("http://127.0.0.1:9999")
   })
+
+  test("trims multiple trailing slashes from provider base_url", async () => {
+    const provider = makeProvider({
+      id: "p", name: "deepseek", kind: "openai",
+      base_url: "https://api.deepseek.com///", api_key: "sk",
+    })
+    const client = createDefaultCustomOpenAIClient()
+    await client.send({
+      provider,
+      payload: { model: "x", messages: [] } as unknown as ChatCompletionsPayload,
+    })
+    expect(captured[0]!.url).toBe("https://api.deepseek.com/v1/chat/completions")
+  })
 })

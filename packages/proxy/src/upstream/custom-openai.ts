@@ -31,7 +31,7 @@ export class CustomOpenAIClient
     req: CustomOpenAIRequest,
   ): Promise<UpstreamResult<ChatCompletionResponse>> {
     const { provider, payload } = req
-    const url = `${provider.base_url.replace(/\/$/, "")}/v1/chat/completions`
+    const url = `${provider.base_url.replace(/\/+$/, "")}/v1/chat/completions`
     const proxyUrl = this.config.getProxyUrl(provider)
     const response = await fetch(url, {
       method: "POST",

@@ -129,6 +129,20 @@ describe("CustomAnthropicClient (E.8)", () => {
     expect(captured[0]!.proxy).toBe("http://127.0.0.1:9999")
   })
 
+  test("trims multiple trailing slashes from provider base_url", async () => {
+    const provider = makeProvider({
+      id: "p", name: "anth", base_url: "https://x.com///", api_key: "sk",
+    })
+    const client = createDefaultCustomAnthropicClient()
+    await client.send({
+      provider,
+      payload: {
+        model: "x", messages: [], max_tokens: 1,
+      } as unknown as AnthropicMessagesPayload,
+    })
+    expect(captured[0]!.url).toBe("https://x.com/v1/messages")
+  })
+
   test("strips null tools/tool_choice/output_config from body", async () => {
     const provider = makeProvider({
       id: "p", name: "anth", base_url: "https://x.com", api_key: "sk",

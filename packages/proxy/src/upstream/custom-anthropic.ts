@@ -61,7 +61,7 @@ export class CustomAnthropicClient
     req: CustomAnthropicRequest,
   ): Promise<UpstreamResult<AnthropicResponse>> {
     const { provider, payload } = req
-    const url = `${provider.base_url.replace(/\/$/, "")}/v1/messages`
+    const url = `${provider.base_url.replace(/\/+$/, "")}/v1/messages`
     const proxyUrl = this.config.getProxyUrl(provider)
     const requestBody = sanitizeAnthropicPayload(payload)
     const headers: Record<string, string> = {
