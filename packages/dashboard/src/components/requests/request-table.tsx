@@ -229,7 +229,7 @@ export function RequestTable({
                   <TableRow
                     key={req.id}
                     className={cn(
-                      "border-border/50 hover:bg-muted/30",
+                      "border-border/50 hover:bg-background/50",
                       onRowClick && "cursor-pointer",
                     )}
                     onClick={() => onRowClick?.(req)}

@@ -121,7 +121,7 @@ export function ModelExplorer({ data, currentSort, currentOrder }: ModelExplorer
             {data.map((entry) => (
               <tr
                 key={entry.key}
-                className="border-b border-border/50 hover:bg-muted/30 transition-colors"
+                className="border-b border-border/50 hover:bg-background/50 transition-colors"
               >
                 {COLUMNS.map((col) => (
                   <td

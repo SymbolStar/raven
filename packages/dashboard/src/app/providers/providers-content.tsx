@@ -204,7 +204,7 @@ function RankingTable({
             {data.map((entry) => (
               <tr
                 key={entry.key}
-                className="border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer"
+                className="border-b border-border/50 hover:bg-background/50 transition-colors cursor-pointer"
                 onClick={() => onRowClick(entry)}
               >
                 {COLUMNS.map((col) => (

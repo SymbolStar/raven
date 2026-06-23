@@ -118,7 +118,7 @@ export function ClientsTable({ data, currentSort, currentOrder }: ClientsTablePr
             {data.map((entry) => (
               <tr
                 key={entry.key}
-                className="border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer"
+                className="border-b border-border/50 hover:bg-background/50 transition-colors cursor-pointer"
                 onClick={() => {
                   const params = new URLSearchParams(searchParams.toString());
                   params.set("client", entry.key);
