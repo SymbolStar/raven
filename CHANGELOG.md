@@ -1,5 +1,35 @@
 # Changelog
 
+## v2.3.6
+
+### Added
+- Add JsonBlock component with light syntax highlighting
+- Auto-detect auth_style for anthropic providers
+
+### Changed
+- Update globals.css comments to 4-tier luminance
+
+### Fixed
+- Align logs mobile stats hover surface
+- Normalize remaining nested detail surfaces
+- Align remaining table shells to L2 surface
+- Copilot account list panels use rounded-card bg-secondary
+- Connect model row drop hover:bg-accent override (use TableRow default)
+- Shared Tabs primitive track bg-background, active bg-secondary
+- CodeBlock default bg-background for L2-nested affordance
+- Inner rows use bg-background no border (was bg-background/50+border)
+- Drop border+translucent mixed pattern from settings/wizard/connect
+- Unify L2 card radius to rounded-card / rounded-widget
+- Progress bar tracks bg-muted -> bg-background
+- Stat-card compact icon container bg-muted -> bg-background
+- Providers tab use bg-background container, bg-secondary active
+- Drop default border from L2 cards (stat-card compact, logs)
+- Unify custom table row hover to bg-background/50
+- Normalize custom provider base URLs
+- Re-probe models when provider format changes
+- Keep auth_style in sync between probe, cache, and runtime
+- Render JSON-shaped session id in a bordered code pane
+
 ## v2.3.5
 
 ### Changed
