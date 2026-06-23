@@ -324,7 +324,7 @@ export function AccountContent({ data }: AccountContentProps) {
       {/* Feature toggles */}
       <div className="space-y-2">
         <h2 className="text-sm font-medium text-muted-foreground">Feature Toggles</h2>
-        <div className="rounded-lg border overflow-hidden divide-y">
+        <div className="rounded-card bg-secondary overflow-hidden divide-y divide-border/50">
           {data.chat_enabled != null && (
             <ToggleRow label="Chat" value={data.chat_enabled} />
           )}
@@ -350,7 +350,7 @@ export function AccountContent({ data }: AccountContentProps) {
             <Globe className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
             <h2 className="text-sm font-medium text-muted-foreground">Endpoints</h2>
           </div>
-          <div className="rounded-lg border overflow-hidden divide-y">
+          <div className="rounded-card bg-secondary overflow-hidden divide-y divide-border/50">
             {Object.entries(data.endpoints).map(([name, url]) => (
               <div
                 key={name}
@@ -374,7 +374,7 @@ export function AccountContent({ data }: AccountContentProps) {
           <h2 className="text-sm font-medium text-muted-foreground">
             Other Properties
           </h2>
-          <div className="rounded-lg border overflow-hidden divide-y">
+          <div className="rounded-card bg-secondary overflow-hidden divide-y divide-border/50">
             {extraEntries.map(([key, value]) => (
               <div
                 key={key}
