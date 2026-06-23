@@ -70,7 +70,7 @@ export function UpstreamsContent({ providers }: UpstreamsContentProps) {
           </p>
         </div>
       ) : (
-        <div className="rounded-widget border border-border/30 overflow-hidden">
+        <div className="rounded-card bg-secondary overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
