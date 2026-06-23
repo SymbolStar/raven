@@ -321,6 +321,7 @@ export const upstreamCharacterisations: ReadonlyArray<CharacterisationEntry> = [
       headers: {
         "content-type": "application/json",
         "x-api-key": "sk-anth",
+        "authorization": "Bearer sk-anth",
         "anthropic-version": "2023-06-01",
       },
       body: {

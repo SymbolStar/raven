@@ -905,5 +905,61 @@ describe("upstreams API", () => {
       db = new Database(":memory:")
       initProviders(db)
     })
+
+    test("anthropic provider: probe detects x-api-key and persists auth_style", async () => {
+      const app = makeApp(db)
+      const provider = createProvider(db, {
+        name: "AnthDirect",
+        base_url: "https://api.anthropic.com",
+        format: "anthropic",
+        api_key: "sk-anth",
+        model_patterns: ["claude-*"],
+      })
+
+      fetchSpy.mockImplementation(((_url: string, init?: { headers?: Record<string, string> }) => {
+        const h = init?.headers ?? {}
+        const hasKey = "x-api-key" in h || "X-Api-Key" in h
+        if (hasKey) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ data: [{ id: "claude-3" }] }), { status: 200 }),
+          )
+        }
+        return Promise.resolve(new Response("nope", { status: 401 }))
+      }) as unknown as typeof fetch)
+
+      const res = await app.request(req("GET", `/api/upstreams/${provider.id}/models`))
+      expect(res.status).toBe(200)
+      const updated = getProvider(db, provider.id)
+      expect(updated?.auth_style).toBe("x-api-key")
+      expect(updated?.supports_models_endpoint).toBe(true)
+    })
+
+    test("anthropic provider: probe falls back to bearer and persists auth_style", async () => {
+      const app = makeApp(db)
+      const provider = createProvider(db, {
+        name: "Manifest",
+        base_url: "https://manifest.example",
+        format: "anthropic",
+        api_key: "mnfst_x",
+        model_patterns: ["auto"],
+      })
+
+      fetchSpy.mockImplementation(((_url: string, init?: { headers?: Record<string, string> }) => {
+        const h = init?.headers ?? {}
+        const auth = h.Authorization ?? h.authorization
+        if (auth?.startsWith("Bearer ")) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ data: [{ id: "auto" }] }), { status: 200 }),
+          )
+        }
+        return Promise.resolve(new Response("missing Authorization", { status: 401 }))
+      }) as unknown as typeof fetch)
+
+      const res = await app.request(req("GET", `/api/upstreams/${provider.id}/models`))
+      expect(res.status).toBe(200)
+      const updated = getProvider(db, provider.id)
+      expect(updated?.auth_style).toBe("bearer")
+      expect(updated?.supports_models_endpoint).toBe(true)
+    })
   })
 })

@@ -203,4 +203,49 @@ describe("CustomAnthropicClient (E.8)", () => {
     const body = captured[0]!.body as Record<string, unknown>
     expect(body.model).toBe("mimo-v2.5-pro")
   })
+
+  test("auth_style=bearer sends only Authorization header", async () => {
+    const provider = makeProvider({
+      id: "p", name: "manifest", base_url: "https://manifest.example", api_key: "mnfst_x",
+      auth_style: "bearer",
+    })
+    const client = createDefaultCustomAnthropicClient()
+    await client.send({
+      provider,
+      payload: { model: "auto", messages: [], max_tokens: 1 } as unknown as AnthropicMessagesPayload,
+    })
+    const h = captured[0]!.headers
+    expect(h.authorization).toBe("Bearer mnfst_x")
+    expect("x-api-key" in h).toBe(false)
+  })
+
+  test("auth_style=x-api-key sends only x-api-key header", async () => {
+    const provider = makeProvider({
+      id: "p", name: "anth", base_url: "https://api.anthropic.com", api_key: "sk-anth",
+      auth_style: "x-api-key",
+    })
+    const client = createDefaultCustomAnthropicClient()
+    await client.send({
+      provider,
+      payload: { model: "claude", messages: [], max_tokens: 1 } as unknown as AnthropicMessagesPayload,
+    })
+    const h = captured[0]!.headers
+    expect(h["x-api-key"]).toBe("sk-anth")
+    expect("authorization" in h).toBe(false)
+  })
+
+  test("auth_style=null sends both headers (compat fallback)", async () => {
+    const provider = makeProvider({
+      id: "p", name: "anth", base_url: "https://api.anthropic.com", api_key: "sk",
+      auth_style: null,
+    })
+    const client = createDefaultCustomAnthropicClient()
+    await client.send({
+      provider,
+      payload: { model: "claude", messages: [], max_tokens: 1 } as unknown as AnthropicMessagesPayload,
+    })
+    const h = captured[0]!.headers
+    expect(h["x-api-key"]).toBe("sk")
+    expect(h.authorization).toBe("Bearer sk")
+  })
 })

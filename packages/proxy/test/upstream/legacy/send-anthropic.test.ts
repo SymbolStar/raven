@@ -31,7 +31,8 @@ function makeProvider(
     enabled: 1,
     created_at: 1,
     updated_at: 1,
-          supports_reasoning: 0, supports_models_endpoint: 0, use_socks5: null,
+          supports_reasoning: 0, supports_models_endpoint: 0, auth_style: null,
+ use_socks5: null,
     ...overrides,
   }
   const compiled = compileProvider(record)

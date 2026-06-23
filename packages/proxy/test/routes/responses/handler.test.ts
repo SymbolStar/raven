@@ -276,6 +276,7 @@ describe("handleResponses (errors)", () => {
         enabled: 1,
         supports_reasoning: 0,
         supports_models_endpoint: 0,
+        auth_style: null,
         use_socks5: null,
         created_at: 0,
         updated_at: 0,

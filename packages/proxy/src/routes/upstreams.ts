@@ -9,12 +9,13 @@ import {
   getProvider,
   listProviders,
   updateProvider,
+  updateProviderAuthStyle,
   updateProviderModelsSupport,
 } from "./../db/providers"
 import { cacheProviders } from "./../lib/utils"
 import { getProxyUrl } from "./../lib/socks5-bridge"
 import { state } from "./../lib/state"
-import type { CreateProviderInput, UpdateProviderInput, ProviderRecord } from "./../db/providers"
+import type { CreateProviderInput, ProviderAuthStyle, ProviderFormat, UpdateProviderInput, ProviderRecord } from "./../db/providers"
 
 // ===========================================================================
 // Validation schemas
@@ -28,6 +29,7 @@ const createProviderSchema = z.object({
   model_patterns: z.array(z.string()).min(1),
   is_enabled: z.boolean().optional().default(true),
   supports_reasoning: z.boolean().optional().default(false),
+  auth_style: z.enum(["bearer", "x-api-key"]).nullable().optional(),
 })
 
 const updateProviderSchema = z.object({
@@ -38,6 +40,7 @@ const updateProviderSchema = z.object({
   model_patterns: z.array(z.string()).min(1).optional(),
   is_enabled: z.boolean().optional(),
   supports_reasoning: z.boolean().optional(),
+  auth_style: z.enum(["bearer", "x-api-key"]).nullable().optional(),
 })
 
 // ===========================================================================
@@ -110,6 +113,10 @@ function checkModelConflicts(
 /**
  * Probe upstream to check if /v1/models endpoint is supported.
  * Updates the database with the result.
+ *
+ * For anthropic-format providers, also auto-detects which auth header style
+ * the upstream accepts (Bearer vs x-api-key) by trying each, and persists
+ * the winning style via updateProviderAuthStyle.
  */
 async function probeModelsEndpoint(
   db: Database,
@@ -121,31 +128,71 @@ async function probeModelsEndpoint(
   const url = `${baseUrl.replace(/\/+$/, "")}/v1/models`
   const compiled = provider ? compileProvider(provider) : null
   const proxyUrl = compiled ? getProxyUrl(compiled, state) : undefined
-  try {
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      signal: AbortSignal.timeout(5000), // 5s timeout for probe
-      ...(proxyUrl ? { proxy: proxyUrl } : {}),
-    } as RequestInit)
+  const format: ProviderFormat = provider?.format ?? "openai"
 
-    const supports = res.ok
+  const tryAuth = async (style: ProviderAuthStyle): Promise<Response | null> => {
+    const headers: Record<string, string> =
+      style === "bearer"
+        ? { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }
+        : { "x-api-key": apiKey, "Content-Type": "application/json", "anthropic-version": "2023-06-01" }
+    try {
+      return await fetch(url, {
+        headers,
+        signal: AbortSignal.timeout(5000),
+        ...(proxyUrl ? { proxy: proxyUrl } : {}),
+      } as RequestInit)
+    } catch {
+      return null
+    }
+  }
+
+  // OpenAI-format always uses Bearer — no detection needed.
+  if (format === "openai") {
+    const res = await tryAuth("bearer")
+    const supports = !!res && res.ok
     try {
       updateProviderModelsSupport(db, providerId, supports)
     } catch {
       // DB may be closed in tests, ignore
     }
     return supports
-  } catch {
-    try {
-      updateProviderModelsSupport(db, providerId, false)
-    } catch {
-      // DB may be closed in tests, ignore
-    }
-    return false
   }
+
+  // Anthropic-format: try x-api-key first (Anthropic standard), then Bearer.
+  // Record which style succeeded so the messages path can pick the right header.
+  let detected: ProviderAuthStyle | null = null
+  let modelsOk = false
+
+  const a = await tryAuth("x-api-key")
+  if (a && a.ok) {
+    detected = "x-api-key"
+    modelsOk = true
+  } else {
+    const b = await tryAuth("bearer")
+    if (b && b.ok) {
+      detected = "bearer"
+      modelsOk = true
+    } else {
+      // Neither succeeded as 2xx. Distinguish "auth wrong style" (401/403)
+      // from genuine "endpoint missing" (404) — a 401 on x-api-key plus a
+      // non-401 on bearer (or vice versa) tells us the style even when the
+      // models endpoint isn't usable.
+      const aStatus = a?.status ?? 0
+      const bStatus = b?.status ?? 0
+      const aRejected = aStatus === 401 || aStatus === 403
+      const bRejected = bStatus === 401 || bStatus === 403
+      if (aRejected && !bRejected && bStatus > 0) detected = "bearer"
+      else if (bRejected && !aRejected && aStatus > 0) detected = "x-api-key"
+    }
+  }
+
+  try {
+    updateProviderModelsSupport(db, providerId, modelsOk)
+    if (detected !== null) updateProviderAuthStyle(db, providerId, detected)
+  } catch {
+    // DB may be closed in tests, ignore
+  }
+  return modelsOk
 }
 
 // ===========================================================================
@@ -188,7 +235,10 @@ export function createUpstreamsRoute(db: Database): Hono {
 
     let input: CreateProviderInput
     try {
-      input = createProviderSchema.parse(await c.req.json())
+      const parsed = createProviderSchema.parse(await c.req.json())
+      input = Object.fromEntries(
+        Object.entries(parsed).filter(([_, v]) => v !== undefined),
+      ) as unknown as CreateProviderInput
     } catch {
       return c.json({ error: { message: "Invalid input" } }, 400)
     }
@@ -216,7 +266,12 @@ export function createUpstreamsRoute(db: Database): Hono {
     // Probe models endpoint in background (don't block response)
     // Note: we don't need to refresh cache after probe since supports_models_endpoint
     // is only used by the health check endpoint, not the routing engine
-    probeModelsEndpoint(db, provider.id, input.base_url, input.api_key)
+    const newRow = db
+      .query("SELECT * FROM providers WHERE id = $id")
+      .get({ $id: provider.id }) as ProviderRecord | null
+    if (newRow) {
+      probeModelsEndpoint(db, provider.id, input.base_url, input.api_key, newRow)
+    }
 
     return c.json(provider, 201)
   })
@@ -330,23 +385,77 @@ export function createUpstreamsRoute(db: Database): Hono {
     try {
       const compiled = compileProvider(row)
       const proxyUrl = compiled ? getProxyUrl(compiled, state) : undefined
-      const res = await fetch(modelsUrl, {
-        headers: {
-          Authorization: `Bearer ${row.api_key}`,
-          "Content-Type": "application/json",
-        },
-        signal: AbortSignal.timeout(10000), // 10s timeout
-        ...(proxyUrl ? { proxy: proxyUrl } : {}),
-      } as RequestInit)
+      let firstError: unknown = null
+      const tryAuth = async (style: ProviderAuthStyle): Promise<Response | null> => {
+        const headers: Record<string, string> =
+          style === "bearer"
+            ? { Authorization: `Bearer ${row.api_key}`, "Content-Type": "application/json" }
+            : {
+                "x-api-key": row.api_key,
+                "Content-Type": "application/json",
+                "anthropic-version": "2023-06-01",
+              }
+        try {
+          return await fetch(modelsUrl, {
+            headers,
+            signal: AbortSignal.timeout(10000),
+            ...(proxyUrl ? { proxy: proxyUrl } : {}),
+          } as RequestInit)
+        } catch (err) {
+          if (firstError === null) firstError = err
+          return null
+        }
+      }
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => "")
-        // Update DB: models endpoint not supported
+      // Determine attempt order — honor stored auth_style if present, else
+      // probe x-api-key first for anthropic / bearer first for openai.
+      const order: ProviderAuthStyle[] =
+        row.auth_style === "bearer"
+          ? ["bearer", "x-api-key"]
+          : row.auth_style === "x-api-key"
+            ? ["x-api-key", "bearer"]
+            : row.format === "anthropic"
+              ? ["x-api-key", "bearer"]
+              : ["bearer", "x-api-key"]
+
+      let res: Response | null = null
+      let detected: ProviderAuthStyle | null = null
+      for (const style of order) {
+        const r = await tryAuth(style)
+        if (r && r.ok) {
+          res = r
+          detected = style
+          break
+        }
+        // Keep last response for error reporting if none succeed
+        if (r) res = r
+      }
+
+      // No response at all — treat as connection failure (test contract).
+      if (!res && firstError !== null) {
+        const message = firstError instanceof Error ? firstError.message : "Unknown error"
         updateProviderModelsSupport(db, id, false)
         return c.json(
           {
             error: {
-              message: `Upstream returned ${res.status}: ${text.slice(0, 200)}`,
+              message: `Failed to connect: ${message}`,
+              type: "connection_error",
+            },
+            healthy: false,
+            supports_models_endpoint: false,
+          },
+          502,
+        )
+      }
+
+      if (!res || !res.ok) {
+        const text = res ? await res.text().catch(() => "") : ""
+        const status = res?.status ?? 0
+        updateProviderModelsSupport(db, id, false)
+        return c.json(
+          {
+            error: {
+              message: `Upstream returned ${status}: ${text.slice(0, 200)}`,
               type: "upstream_error",
             },
             healthy: false,
@@ -359,8 +468,11 @@ export function createUpstreamsRoute(db: Database): Hono {
       const data = (await res.json()) as { data?: Array<{ id: string; owned_by?: string }> }
       const models = data.data ?? []
 
-      // Update DB: models endpoint supported
+      // Update DB: models endpoint supported, persist detected auth style
       updateProviderModelsSupport(db, id, true)
+      if (detected !== null && row.format === "anthropic") {
+        updateProviderAuthStyle(db, id, detected)
+      }
 
       // Group models by owned_by
       const grouped: Record<string, string[]> = {}

@@ -27,7 +27,17 @@ async function fetchUpstreamModels(provider: CompiledProvider): Promise<string[]
       "Content-Type": "application/json",
     }
     if (provider.api_key) {
-      headers["Authorization"] = `Bearer ${provider.api_key}`
+      // Honor stored auth_style (set by probe); otherwise default to
+      // Bearer for openai, x-api-key for anthropic.
+      const style =
+        provider.auth_style ??
+        (provider.format === "anthropic" ? "x-api-key" : "bearer")
+      if (style === "bearer") {
+        headers["Authorization"] = `Bearer ${provider.api_key}`
+      } else {
+        headers["x-api-key"] = provider.api_key
+        headers["anthropic-version"] = "2023-06-01"
+      }
     }
 
     const proxyUrl = getProxyUrl(provider, state)

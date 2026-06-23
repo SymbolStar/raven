@@ -64,13 +64,24 @@ export class CustomAnthropicClient
     const url = `${provider.base_url.replace(/\/$/, "")}/v1/messages`
     const proxyUrl = this.config.getProxyUrl(provider)
     const requestBody = sanitizeAnthropicPayload(payload)
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "anthropic-version": "2023-06-01",
+    }
+    // auth_style: explicit bearer/x-api-key, null = unknown so send both.
+    // Standard Anthropic endpoints accept x-api-key; Manifest et al. require
+    // Authorization: Bearer. Dual-header is safe — endpoints ignore unknown headers.
+    if (provider.auth_style === "bearer") {
+      headers.Authorization = `Bearer ${provider.api_key}`
+    } else if (provider.auth_style === "x-api-key") {
+      headers["x-api-key"] = provider.api_key
+    } else {
+      headers["x-api-key"] = provider.api_key
+      headers.Authorization = `Bearer ${provider.api_key}`
+    }
     const response = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": provider.api_key,
-        "anthropic-version": "2023-06-01",
-      },
+      headers,
       body: JSON.stringify(requestBody),
       ...(proxyUrl ? { proxy: proxyUrl } : {}),
     } as RequestInit)
