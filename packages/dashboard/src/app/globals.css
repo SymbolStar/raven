@@ -9,7 +9,7 @@
  *
  * Color space: HSL (basalt design system).
  * Primary: Raven purple-indigo (derived from logo).
- * Luminance: 3-tier (L0 body > L1 card > L2 secondary).
+ * Luminance: 4-tier B05 — L0 background / L1 card / L2 secondary / L3 secondary + border.
  */
 @theme inline {
   --color-border: hsl(var(--border));
@@ -128,7 +128,7 @@
 
 /*
  * Design tokens — light (default) & dark mode
- * 3-tier luminance: L0 (background) > L1 (card) > L2 (secondary)
+ * 4-tier luminance (B05): L0 background / L1 card / L2 secondary / L3 secondary + border
  * Primary: Raven purple-indigo (derived from logo)
  */
 :root {
