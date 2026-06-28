@@ -21,6 +21,7 @@
 | 17 | [SOCKS5 Proxy Relay](./17-socks5-proxy-relay.md) | SOCKS5 代理中继：隐藏出口 IP，per-upstream 路由策略 |
 | 18 | [Native Anthropic Messages](./18-native-anthropic-messages.md) | 原生 Anthropic 透传：Claude 模型默认走 `/v1/messages` |
 | 19 | [Pipeline Refactor](./19-pipeline-refactor.md) | 请求处理管线重构 |
+| 23 | [Token Sentinel](./23-token-sentinel.md) | Copilot token 单写者刷新架构：哨兵 loop + 信号通道，天然线程安全 |
 
 ## Archive
 
