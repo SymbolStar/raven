@@ -2,10 +2,16 @@
  * Copilot Embeddings upstream client.
  */
 
-import { copilotBaseUrl, copilotHeaders } from "../lib/api-config"
+import {
+  copilotBaseUrl,
+  copilotHeaders,
+  copilotHeadersForToken,
+} from "../lib/api-config"
 import { HTTPError } from "../lib/error"
 import { getProxyUrl } from "../lib/socks5-bridge"
 import { state } from "../lib/state"
+import { refreshNow } from "../lib/token-sentinel"
+import { tokenSignal, isTokenExpiredBody } from "../lib/token-signal"
 import type { UpstreamClient, UpstreamResult } from "./interface"
 
 export interface EmbeddingRequest {
@@ -34,6 +40,7 @@ export interface CopilotEmbeddingsConfig {
   getBaseUrl(): string
   getHeaders(): Record<string, string>
   getProxyUrl(): string | undefined
+  snapshotAuth(): { token: string; headers: Record<string, string> }
 }
 
 export class CopilotEmbeddingsClient
@@ -44,13 +51,40 @@ export class CopilotEmbeddingsClient
   async send(payload: EmbeddingRequest): Promise<UpstreamResult<EmbeddingResponse>> {
     this.config.getToken()
 
+    const url = `${this.config.getBaseUrl()}/embeddings`
     const proxyUrl = this.config.getProxyUrl()
-    const response = await fetch(`${this.config.getBaseUrl()}/embeddings`, {
-      method: "POST",
-      headers: this.config.getHeaders(),
-      body: JSON.stringify(payload),
-      ...(proxyUrl ? { proxy: proxyUrl } : {}),
-    } as RequestInit)
+    const body = JSON.stringify(payload)
+
+    const callOnce = async (): Promise<{ response: Response; usedToken: string }> => {
+      const { token, headers } = this.config.snapshotAuth()
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body,
+        ...(proxyUrl ? { proxy: proxyUrl } : {}),
+      } as RequestInit)
+      return { response, usedToken: token }
+    }
+
+    const first = await callOnce()
+    let response = first.response
+
+    if (response.status === 401) {
+      const respBody = await response.text().catch(() => "")
+      const tokenExpired = isTokenExpiredBody(401, respBody)
+      tokenSignal.reportAuthFailure(tokenExpired ? "token-expired" : "other-401")
+
+      if (!tokenExpired) {
+        throw new HTTPError("Failed to create embeddings", 401, respBody)
+      }
+
+      const result = await refreshNow("llm-401", first.usedToken)
+      if (!result.ok || !result.tokenWasUpdated) {
+        throw new HTTPError("Failed to create embeddings", 401, respBody)
+      }
+
+      response = (await callOnce()).response
+    }
 
     if (!response.ok) {
       throw await HTTPError.fromResponse("Failed to create embeddings", response)
@@ -69,6 +103,11 @@ export function defaultCopilotEmbeddingsConfig(): CopilotEmbeddingsConfig {
     getBaseUrl: () => copilotBaseUrl(state),
     getHeaders: () => copilotHeaders(state),
     getProxyUrl: () => getProxyUrl("copilot", state),
+    snapshotAuth: () => {
+      const token = state.copilotToken
+      if (!token) throw new Error("Copilot token not found")
+      return { token, headers: copilotHeadersForToken(state, token, false) }
+    },
   }
 }
 

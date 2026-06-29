@@ -13,6 +13,11 @@ import {
   type CopilotOpenAIConfig,
 } from "../../src/upstream/copilot-openai"
 import { upstreamCharacterisations } from "./__characterisation__/upstream-fixtures"
+import {
+  bootstrap as sentinelBootstrap,
+  type SentinelHandle,
+} from "../../src/lib/token-sentinel"
+import { _resetTokenSignalForTest, tokenSignal } from "../../src/lib/token-signal"
 
 interface CapturedRequest {
   url: string
@@ -181,6 +186,13 @@ describe("CopilotOpenAIClient (E.3)", () => {
       getBaseUrl: () => "https://inj.example.com",
       getHeaders: () => ({ "x-injected": "yes" }),
       getProxyUrl: () => "http://127.0.0.1:9999",
+      snapshotAuth: ({ isAgentCall }) => ({
+        token: "injected-jwt",
+        headers: {
+          "x-injected": "yes",
+          "X-Initiator": isAgentCall ? "agent" : "user",
+        },
+      }),
     }
     const client = new CopilotOpenAIClient(config)
     await client.send({ model: "gpt", messages: [{ role: "user", content: "hi" }] })
@@ -188,5 +200,227 @@ describe("CopilotOpenAIClient (E.3)", () => {
     expect(captured[0]!.proxy).toBe("http://127.0.0.1:9999")
     expect(captured[0]!.headers["x-injected"]).toBe("yes")
     expect(captured[0]!.headers["x-initiator"]).toBe("user")
+  })
+})
+
+// ===========================================================================
+// 401 retry matrix (phase 2.4)
+//
+// End-to-end: real CopilotOpenAIClient + real sentinel + mocked fetch.
+// Uses the actual getCopilotToken mock indirectly via fetch spy that returns
+// the GitHub copilot_internal/v2/token shape.
+// ===========================================================================
+
+describe("CopilotOpenAIClient — 401 retry matrix", () => {
+  let handle: SentinelHandle | null = null
+
+  beforeEach(() => {
+    // captureFetch in outer beforeEach already mocked fetch; this block uses
+    // bespoke mocks per test so restore first.
+    spy.mockRestore()
+    _resetTokenSignalForTest()
+    state.copilotToken = "stale-jwt"
+    state.vsCodeVersion = "1.117.0"
+    state.copilotChatVersion = "0.45.1"
+    state.accountType = "individual"
+  })
+
+  afterEach(() => {
+    if (handle) {
+      handle.stop()
+      handle = null
+    }
+    state.copilotToken = SAVED.copilotToken
+  })
+
+  /**
+   * Mock fetch to:
+   *  - intercept /chat/completions: replay scripted responses in order
+   *  - intercept /copilot_internal/v2/token: return given refresh result
+   */
+  function mockFetchScript(opts: {
+    chatResponses: Response[]
+    tokenRefresh?:
+      | { ok: true; token: string; refresh_in?: number }
+      | { ok: false; status: number; body: string }
+  }): { fetchSpy: ReturnType<typeof vi.spyOn>; calls: { url: string; auth: string | null }[] } {
+    const calls: { url: string; auth: string | null }[] = []
+    let chatIdx = 0
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(((
+      input: string | URL | Request,
+      init?: RequestInit,
+    ) => {
+      const url = typeof input === "string" ? input : input.toString()
+      const headers = normaliseHeaders(init?.headers)
+      calls.push({ url, auth: headers.authorization ?? null })
+
+      if (url.includes("/copilot_internal/v2/token")) {
+        if (opts.tokenRefresh?.ok) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                token: opts.tokenRefresh.token,
+                refresh_in: opts.tokenRefresh.refresh_in ?? 1500,
+                expires_at: 9_999_999_999,
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            ),
+          )
+        }
+        return Promise.resolve(
+          new Response(opts.tokenRefresh!.body, { status: opts.tokenRefresh!.status }),
+        )
+      }
+      if (url.includes("/chat/completions")) {
+        const r = opts.chatResponses[chatIdx]
+        if (!r) throw new Error(`unexpected chat call #${chatIdx + 1}`)
+        chatIdx += 1
+        return Promise.resolve(r)
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }) as unknown as typeof fetch)
+    return { fetchSpy, calls }
+  }
+
+  test("2xx: no signal report, no refreshNow", async () => {
+    const { fetchSpy, calls } = mockFetchScript({
+      chatResponses: [
+        new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
+      ],
+    })
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+
+    const client = createDefaultCopilotOpenAIClient()
+    await client.send({ model: "gpt-4o", messages: [{ role: "user", content: "x" }] })
+
+    expect(tokenSignal.readScore()).toBe(0)
+    // Only one chat call, no token refresh
+    expect(calls.filter((c) => c.url.includes("/chat/completions"))).toHaveLength(1)
+    expect(calls.filter((c) => c.url.includes("/copilot_internal/v2/token"))).toHaveLength(0)
+    fetchSpy.mockRestore()
+  })
+
+  test("401 non-token-expired: reports other-401, does NOT call refreshNow, throws", async () => {
+    const { fetchSpy, calls } = mockFetchScript({
+      chatResponses: [new Response("unauthorized: bad scope", { status: 401 })],
+    })
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+
+    const client = createDefaultCopilotOpenAIClient()
+    await expect(
+      client.send({ model: "gpt-4o", messages: [{ role: "user", content: "x" }] }),
+    ).rejects.toThrow("Failed to create chat completions")
+
+    expect(tokenSignal.readScore()).toBe(1) // other-401
+    expect(calls.filter((c) => c.url.includes("/chat/completions"))).toHaveLength(1)
+    expect(calls.filter((c) => c.url.includes("/copilot_internal/v2/token"))).toHaveLength(0)
+    fetchSpy.mockRestore()
+  })
+
+  test("401 token-expired + refresh success + retry 2xx: returns retry response, single retry", async () => {
+    const { fetchSpy, calls } = mockFetchScript({
+      chatResponses: [
+        new Response("token expired", { status: 401 }),
+        new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
+      ],
+      tokenRefresh: { ok: true, token: "fresh-jwt" },
+    })
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+    // Advance time past min-interval so refreshNow actually calls upstream
+    vi.useFakeTimers({ now: Date.now() + 60_000 })
+
+    const client = createDefaultCopilotOpenAIClient()
+    const result = await client.send({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: "x" }],
+    })
+    expect(result).toEqual({})
+
+    const chatCalls = calls.filter((c) => c.url.includes("/chat/completions"))
+    expect(chatCalls).toHaveLength(2)
+    expect(chatCalls[0]!.auth).toBe("Bearer stale-jwt")
+    expect(chatCalls[1]!.auth).toBe("Bearer fresh-jwt")
+    expect(state.copilotToken).toBe("fresh-jwt")
+    expect(tokenSignal.readScore()).toBe(3) // token-expired
+    vi.useRealTimers()
+    fetchSpy.mockRestore()
+  })
+
+  test("401 token-expired + refresh failure: no retry, original 401 thrown", async () => {
+    const { fetchSpy, calls } = mockFetchScript({
+      chatResponses: [new Response("token expired", { status: 401 })],
+      tokenRefresh: { ok: false, status: 500, body: "upstream down" },
+    })
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+    vi.useFakeTimers({ now: Date.now() + 60_000 })
+
+    const client = createDefaultCopilotOpenAIClient()
+    await expect(
+      client.send({ model: "gpt-4o", messages: [{ role: "user", content: "x" }] }),
+    ).rejects.toThrow("Failed to create chat completions")
+
+    expect(calls.filter((c) => c.url.includes("/chat/completions"))).toHaveLength(1)
+    expect(state.copilotToken).toBe("stale-jwt") // unchanged
+    vi.useRealTimers()
+    fetchSpy.mockRestore()
+  })
+
+  test("concurrent tail: A & B both use stale, B refreshes first → A short-circuits via attemptedToken", async () => {
+    // Sequence:
+    //   - A starts, snapshot token = "stale"
+    //   - B starts, snapshot token = "stale"
+    //   - A first call returns 401 token-expired → refreshNow("llm-401", "stale")
+    //     → fetches /copilot_internal/v2/token → returns "fresh"
+    //   - A retries with fresh, gets 200
+    //   - B first call returns 401 token-expired → refreshNow("llm-401", "stale")
+    //     → attemptedToken !== state.copilotToken (now "fresh") → short-circuit
+    //   - B retries with fresh, gets 200
+    let chatIdx = 0
+    const chatResponses: Response[] = [
+      new Response("token expired", { status: 401 }), // A first
+      new Response("token expired", { status: 401 }), // B first
+      new Response('{"a":1}', { status: 200, headers: { "content-type": "application/json" } }), // A retry
+      new Response('{"b":2}', { status: 200, headers: { "content-type": "application/json" } }), // B retry
+    ]
+    let tokenCalls = 0
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(((
+      input: string | URL | Request,
+    ) => {
+      const url = typeof input === "string" ? input : input.toString()
+      if (url.includes("/copilot_internal/v2/token")) {
+        tokenCalls += 1
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              token: "fresh-jwt",
+              refresh_in: 1500,
+              expires_at: 9_999_999_999,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        )
+      }
+      const r = chatResponses[chatIdx]
+      if (!r) throw new Error(`unexpected chat call #${chatIdx + 1}`)
+      chatIdx += 1
+      return Promise.resolve(r)
+    }) as unknown as typeof fetch)
+
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+    vi.useFakeTimers({ now: Date.now() + 60_000 })
+
+    const client = createDefaultCopilotOpenAIClient()
+    const [rA, rB] = await Promise.all([
+      client.send({ model: "gpt-4o", messages: [{ role: "user", content: "a" }] }),
+      client.send({ model: "gpt-4o", messages: [{ role: "user", content: "b" }] }),
+    ])
+
+    expect(rA).toEqual({ a: 1 })
+    expect(rB).toEqual({ b: 2 })
+    // Upstream token endpoint called at most once even with two concurrent retries
+    expect(tokenCalls).toBeLessThanOrEqual(1)
+    expect(state.copilotToken).toBe("fresh-jwt")
+    vi.useRealTimers()
+    fetchSpy.mockRestore()
   })
 })

@@ -5,10 +5,16 @@
  */
 
 import { events, type ServerSentEvent } from "../util/sse"
-import { copilotBaseUrl, copilotHeaders } from "../lib/api-config"
+import {
+  copilotBaseUrl,
+  copilotHeaders,
+  copilotHeadersForToken,
+} from "../lib/api-config"
 import { HTTPError } from "../lib/error"
 import { getProxyUrl } from "../lib/socks5-bridge"
 import { state } from "../lib/state"
+import { refreshNow } from "../lib/token-sentinel"
+import { tokenSignal, isTokenExpiredBody } from "../lib/token-signal"
 import { getModelCapabilities } from "../strategies/support/model-capabilities"
 import type {
   AnthropicMessagesPayload,
@@ -26,11 +32,21 @@ export interface NativeMessagesOptions {
   anthropicBeta?: string | null
 }
 
+export interface CopilotNativeSnapshotOptions {
+  anthropicBeta: string | null
+  visionRequest: boolean
+  isAgentCall: boolean
+}
+
 export interface CopilotNativeConfig {
   getToken(): string
   getBaseUrl(): string
   getHeaders(): Record<string, string>
   getProxyUrl(): string | undefined
+  snapshotAuth(opts: CopilotNativeSnapshotOptions): {
+    token: string
+    headers: Record<string, string>
+  }
 }
 
 export interface CopilotNativeRequest {
@@ -48,22 +64,11 @@ export class CopilotNativeClient
 
     const normalizedPayload = normalizeNativeThinkingPayload(req.payload, req.options.copilotModel)
 
-    const headers: Record<string, string> = {
-      ...this.config.getHeaders(),
-      "anthropic-version": "2023-06-01",
-    }
-
     const anthropicBeta = buildNativeAnthropicBeta(normalizedPayload, req.options.anthropicBeta ?? null)
-    if (anthropicBeta) headers["anthropic-beta"] = anthropicBeta
-
-    if (checkForVision(normalizedPayload)) {
-      headers["copilot-vision-request"] = "true"
-    }
-
+    const visionRequest = checkForVision(normalizedPayload)
     const isAgentCall = normalizedPayload.messages.some(
       (msg) => msg.role === "assistant" || hasToolResultContent(msg),
     )
-    headers["X-Initiator"] = isAgentCall ? "agent" : "user"
 
     const requestBody: Record<string, unknown> = {
       ...sanitizeNativeMessagesPayload(normalizedPayload),
@@ -78,13 +83,44 @@ export class CopilotNativeClient
       delete requestBody.output_config
     }
 
+    const url = `${this.config.getBaseUrl()}/v1/messages`
     const proxyUrl = this.config.getProxyUrl()
-    const response = await fetch(`${this.config.getBaseUrl()}/v1/messages`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(requestBody),
-      ...(proxyUrl ? { proxy: proxyUrl } : {}),
-    } as RequestInit)
+    const body = JSON.stringify(requestBody)
+
+    const callOnce = async (): Promise<{ response: Response; usedToken: string }> => {
+      const { token, headers } = this.config.snapshotAuth({
+        anthropicBeta,
+        visionRequest,
+        isAgentCall,
+      })
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body,
+        ...(proxyUrl ? { proxy: proxyUrl } : {}),
+      } as RequestInit)
+      return { response, usedToken: token }
+    }
+
+    const first = await callOnce()
+    let response = first.response
+
+    if (response.status === 401) {
+      const respBody = await response.text().catch(() => "")
+      const tokenExpired = isTokenExpiredBody(401, respBody)
+      tokenSignal.reportAuthFailure(tokenExpired ? "token-expired" : "other-401")
+
+      if (!tokenExpired) {
+        throw new HTTPError("Failed to create native messages", 401, respBody)
+      }
+
+      const result = await refreshNow("llm-401", first.usedToken)
+      if (!result.ok || !result.tokenWasUpdated) {
+        throw new HTTPError("Failed to create native messages", 401, respBody)
+      }
+
+      response = (await callOnce()).response
+    }
 
     if (!response.ok) {
       throw await HTTPError.fromResponse("Failed to create native messages", response)
@@ -107,6 +143,17 @@ export function defaultCopilotNativeConfig(): CopilotNativeConfig {
     getBaseUrl: () => copilotBaseUrl(state),
     getHeaders: () => copilotHeaders(state),
     getProxyUrl: () => getProxyUrl("copilot", state),
+    snapshotAuth: ({ anthropicBeta, visionRequest, isAgentCall }) => {
+      const token = state.copilotToken
+      if (!token) throw new Error("Copilot token not found")
+      const headers: Record<string, string> = {
+        ...copilotHeadersForToken(state, token, visionRequest),
+        "anthropic-version": "2023-06-01",
+        "X-Initiator": isAgentCall ? "agent" : "user",
+      }
+      if (anthropicBeta) headers["anthropic-beta"] = anthropicBeta
+      return { token, headers }
+    },
   }
 }
 

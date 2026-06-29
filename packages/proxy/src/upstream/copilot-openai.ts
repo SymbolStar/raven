@@ -7,15 +7,29 @@
  */
 
 import { events, type ServerSentEvent } from "../util/sse"
-import { copilotBaseUrl, copilotHeaders } from "../lib/api-config"
+import {
+  copilotBaseUrl,
+  copilotHeaders,
+  copilotHeadersForToken,
+} from "../lib/api-config"
 import { HTTPError } from "../lib/error"
 import { getProxyUrl } from "../lib/socks5-bridge"
 import { state } from "../lib/state"
+import { refreshNow } from "../lib/token-sentinel"
+import {
+  tokenSignal,
+  isTokenExpiredBody,
+} from "../lib/token-signal"
 import type { UpstreamClient, UpstreamResult } from "./interface"
 
 // ---------------------------------------------------------------------------
 // Re-exported wire types (canonical home moves here in E.10).
 // ---------------------------------------------------------------------------
+
+export interface CopilotOpenAISnapshotOptions {
+  enableVision: boolean
+  isAgentCall: boolean
+}
 
 export interface CopilotOpenAIConfig {
   /** Throws if the token is missing — callers guard against null at the boundary. */
@@ -25,6 +39,15 @@ export interface CopilotOpenAIConfig {
   getHeaders(vision: boolean): Record<string, string>
   /** Resolve the SOCKS5 proxy URL for this request, or undefined for direct connect. */
   getProxyUrl(): string | undefined
+  /**
+   * Atomic capture: returns the token snapshot used for the request *and*
+   * the headers built from that exact token. See
+   * docs/23-token-sentinel.md §9 (snapshotAuth contract).
+   */
+  snapshotAuth(opts: CopilotOpenAISnapshotOptions): {
+    token: string
+    headers: Record<string, string>
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -198,18 +221,45 @@ export class CopilotOpenAIClient
       ["assistant", "tool"].includes(msg.role),
     )
 
-    const headers: Record<string, string> = {
-      ...this.config.getHeaders(enableVision),
-      "X-Initiator": isAgentCall ? "agent" : "user",
+    const url = `${this.config.getBaseUrl()}/chat/completions`
+    const proxyUrl = this.config.getProxyUrl()
+    const body = JSON.stringify(payload)
+
+    const callOnce = async (): Promise<{ response: Response; usedToken: string }> => {
+      const { token, headers } = this.config.snapshotAuth({
+        enableVision,
+        isAgentCall,
+      })
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body,
+        ...(proxyUrl ? { proxy: proxyUrl } : {}),
+      } as RequestInit)
+      return { response, usedToken: token }
     }
 
-    const proxyUrl = this.config.getProxyUrl()
-    const response = await fetch(`${this.config.getBaseUrl()}/chat/completions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-      ...(proxyUrl ? { proxy: proxyUrl } : {}),
-    } as RequestInit)
+    const first = await callOnce()
+    let response = first.response
+
+    if (response.status === 401) {
+      const respBody = await response.text().catch(() => "")
+      const tokenExpired = isTokenExpiredBody(401, respBody)
+      tokenSignal.reportAuthFailure(tokenExpired ? "token-expired" : "other-401")
+
+      if (!tokenExpired) {
+        throw new HTTPError("Failed to create chat completions", 401, respBody)
+      }
+
+      const result = await refreshNow("llm-401", first.usedToken)
+      if (!result.ok || !result.tokenWasUpdated) {
+        // refresh failed / cooled down / token unchanged → don't retry
+        throw new HTTPError("Failed to create chat completions", 401, respBody)
+      }
+
+      // I-5: at most one retry with the freshly-snapshotted token
+      response = (await callOnce()).response
+    }
 
     if (!response.ok) {
       throw await HTTPError.fromResponse("Failed to create chat completions", response)
@@ -233,6 +283,18 @@ export function defaultCopilotOpenAIConfig(): CopilotOpenAIConfig {
     getBaseUrl: () => copilotBaseUrl(state),
     getHeaders: (vision: boolean) => copilotHeaders(state, vision),
     getProxyUrl: () => getProxyUrl("copilot", state),
+    snapshotAuth: ({ enableVision, isAgentCall }) => {
+      // Single atomic read of state.copilotToken (matches docs §9 contract).
+      const token = state.copilotToken
+      if (!token) throw new Error("Copilot token not found")
+      return {
+        token,
+        headers: {
+          ...copilotHeadersForToken(state, token, enableVision),
+          "X-Initiator": isAgentCall ? "agent" : "user",
+        },
+      }
+    },
   }
 }
 

@@ -6,10 +6,16 @@
  */
 
 import { events, type ServerSentEvent } from "../util/sse"
-import { copilotBaseUrl, copilotHeaders } from "../lib/api-config"
+import {
+  copilotBaseUrl,
+  copilotHeaders,
+  copilotHeadersForToken,
+} from "../lib/api-config"
 import { HTTPError } from "../lib/error"
 import { getProxyUrl } from "../lib/socks5-bridge"
 import { state } from "../lib/state"
+import { refreshNow } from "../lib/token-sentinel"
+import { tokenSignal, isTokenExpiredBody } from "../lib/token-signal"
 import type { UpstreamClient, UpstreamResult } from "./interface"
 
 export interface ResponsesPayload {
@@ -19,11 +25,20 @@ export interface ResponsesPayload {
   [key: string]: unknown
 }
 
+export interface CopilotResponsesSnapshotOptions {
+  enableVision: boolean
+  isAgentCall: boolean
+}
+
 export interface CopilotResponsesConfig {
   getToken(): string
   getBaseUrl(): string
   getHeaders(vision: boolean): Record<string, string>
   getProxyUrl(): string | undefined
+  snapshotAuth(opts: CopilotResponsesSnapshotOptions): {
+    token: string
+    headers: Record<string, string>
+  }
 }
 
 export class CopilotResponsesClient
@@ -37,18 +52,40 @@ export class CopilotResponsesClient
     const enableVision = hasVisionContent(payload)
     const isAgentCall = hasAgentHistory(payload)
 
-    const headers: Record<string, string> = {
-      ...this.config.getHeaders(enableVision),
-      "X-Initiator": isAgentCall ? "agent" : "user",
+    const url = `${this.config.getBaseUrl()}/responses`
+    const proxyUrl = this.config.getProxyUrl()
+    const body = JSON.stringify(payload)
+
+    const callOnce = async (): Promise<{ response: Response; usedToken: string }> => {
+      const { token, headers } = this.config.snapshotAuth({ enableVision, isAgentCall })
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body,
+        ...(proxyUrl ? { proxy: proxyUrl } : {}),
+      } as RequestInit)
+      return { response, usedToken: token }
     }
 
-    const proxyUrl = this.config.getProxyUrl()
-    const response = await fetch(`${this.config.getBaseUrl()}/responses`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-      ...(proxyUrl ? { proxy: proxyUrl } : {}),
-    } as RequestInit)
+    const first = await callOnce()
+    let response = first.response
+
+    if (response.status === 401) {
+      const respBody = await response.text().catch(() => "")
+      const tokenExpired = isTokenExpiredBody(401, respBody)
+      tokenSignal.reportAuthFailure(tokenExpired ? "token-expired" : "other-401")
+
+      if (!tokenExpired) {
+        throw new HTTPError("Failed to create responses", 401, respBody)
+      }
+
+      const result = await refreshNow("llm-401", first.usedToken)
+      if (!result.ok || !result.tokenWasUpdated) {
+        throw new HTTPError("Failed to create responses", 401, respBody)
+      }
+
+      response = (await callOnce()).response
+    }
 
     if (!response.ok) {
       throw await HTTPError.fromResponse("Failed to create responses", response)
@@ -71,6 +108,17 @@ export function defaultCopilotResponsesConfig(): CopilotResponsesConfig {
     getBaseUrl: () => copilotBaseUrl(state),
     getHeaders: (vision: boolean) => copilotHeaders(state, vision),
     getProxyUrl: () => getProxyUrl("copilot", state),
+    snapshotAuth: ({ enableVision, isAgentCall }) => {
+      const token = state.copilotToken
+      if (!token) throw new Error("Copilot token not found")
+      return {
+        token,
+        headers: {
+          ...copilotHeadersForToken(state, token, enableVision),
+          "X-Initiator": isAgentCall ? "agent" : "user",
+        },
+      }
+    },
   }
 }
 

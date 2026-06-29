@@ -50,3 +50,21 @@ export const tokenSignal: TokenSignal = {
 export function _resetTokenSignalForTest(): void {
   score = 0
 }
+
+// ---------------------------------------------------------------------------
+// isTokenExpiredBody — fuzzy match the recoverable-401 body wording.
+//
+// Used by Copilot upstream clients to decide whether to:
+//   - report "token-expired" (vs "other-401") to tokenSignal
+//   - await sentinel.refreshNow("llm-401") + retry once
+//
+// 误判风险（上游措辞变动）会退化为 "用户看见 401"——可观察、可恢复，
+// 由哨兵 tick 兜底。所以判据保守：只要 body 同时包含 "token" 和 "expired"
+// (任意顺序、大小写、空白) 就命中。
+// ---------------------------------------------------------------------------
+
+export function isTokenExpiredBody(status: number, body: string): boolean {
+  if (status !== 401) return false
+  const lower = body.toLowerCase()
+  return lower.includes("token") && lower.includes("expired")
+}

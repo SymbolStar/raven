@@ -3,6 +3,7 @@ import { describe, expect, test, beforeEach } from "vitest"
 import {
   tokenSignal,
   _resetTokenSignalForTest,
+  isTokenExpiredBody,
 } from "../../src/lib/token-signal"
 
 beforeEach(() => {
@@ -66,5 +67,41 @@ describe("tokenSignal", () => {
     expect(tokenSignal.shouldProbeNow()).toBe(true)
     tokenSignal.decay() // 5 → 4
     expect(tokenSignal.shouldProbeNow()).toBe(false)
+  })
+})
+
+describe("isTokenExpiredBody", () => {
+  test("matches simple 'token expired' (case-insensitive)", () => {
+    expect(isTokenExpiredBody(401, "token expired")).toBe(true)
+    expect(isTokenExpiredBody(401, "Token Expired")).toBe(true)
+    expect(isTokenExpiredBody(401, "TOKEN EXPIRED")).toBe(true)
+  })
+
+  test("matches JSON-wrapped variants", () => {
+    expect(
+      isTokenExpiredBody(401, '{"error":{"message":"token expired"}}'),
+    ).toBe(true)
+    expect(
+      isTokenExpiredBody(401, '{"message":"IDE token expired"}'),
+    ).toBe(true)
+    expect(
+      isTokenExpiredBody(401, '{"error":"the token has expired"}'),
+    ).toBe(true)
+  })
+
+  test("requires both 'token' and 'expired' to appear", () => {
+    expect(isTokenExpiredBody(401, "token invalid")).toBe(false)
+    expect(isTokenExpiredBody(401, "request expired")).toBe(false)
+    expect(isTokenExpiredBody(401, "unauthorized")).toBe(false)
+  })
+
+  test("only matches when status is 401", () => {
+    expect(isTokenExpiredBody(403, "token expired")).toBe(false)
+    expect(isTokenExpiredBody(500, "token expired")).toBe(false)
+    expect(isTokenExpiredBody(200, "token expired")).toBe(false)
+  })
+
+  test("empty body never matches", () => {
+    expect(isTokenExpiredBody(401, "")).toBe(false)
   })
 })

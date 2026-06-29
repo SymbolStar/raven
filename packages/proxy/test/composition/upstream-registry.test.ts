@@ -46,6 +46,7 @@ describe("buildUpstreamClient (E.9)", () => {
         getBaseUrl: () => "u",
         getHeaders: () => ({}),
         getProxyUrl: () => undefined,
+        snapshotAuth: () => ({ token: "x", headers: {} }),
       },
     })
     // Touch one config method to confirm the injected closure is wired.

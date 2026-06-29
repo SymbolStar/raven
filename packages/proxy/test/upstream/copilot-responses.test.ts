@@ -10,6 +10,11 @@ import {
   type ResponsesPayload,
 } from "../../src/upstream/copilot-responses"
 import { upstreamCharacterisations } from "./__characterisation__/upstream-fixtures"
+import {
+  bootstrap as sentinelBootstrap,
+  type SentinelHandle,
+} from "../../src/lib/token-sentinel"
+import { _resetTokenSignalForTest, tokenSignal } from "../../src/lib/token-signal"
 
 interface CapturedRequest {
   url: string
@@ -135,6 +140,13 @@ describe("CopilotResponsesClient (E.5)", () => {
       getBaseUrl: () => "https://inj.example.com",
       getHeaders: () => ({ "x-injected": "yes" }),
       getProxyUrl: () => "http://127.0.0.1:9999",
+      snapshotAuth: ({ isAgentCall }) => ({
+        token: "inj",
+        headers: {
+          "x-injected": "yes",
+          "X-Initiator": isAgentCall ? "agent" : "user",
+        },
+      }),
     })
     await client.send({ model: "gpt-5", input: "hi" })
     expect(captured[0]!.url).toBe("https://inj.example.com/responses")
@@ -175,5 +187,100 @@ describe("CopilotResponsesClient (E.5)", () => {
       ],
     })
     expect(captured[0]!.headers["copilot-vision-request"]).toBe("true")
+  })
+})
+
+// ===========================================================================
+// 401 retry matrix (phase 2.4)
+// ===========================================================================
+
+describe("CopilotResponsesClient — 401 retry matrix", () => {
+  let handle: SentinelHandle | null = null
+
+  beforeEach(() => {
+    spy.mockRestore()
+    _resetTokenSignalForTest()
+    state.copilotToken = "stale-jwt"
+    state.vsCodeVersion = "1.117.0"
+    state.copilotChatVersion = "0.45.1"
+    state.accountType = "individual"
+  })
+
+  afterEach(() => {
+    if (handle) {
+      handle.stop()
+      handle = null
+    }
+  })
+
+  function mockScript(opts: {
+    responses: Response[]
+    tokenRefresh?: { ok: true; token: string } | { ok: false; status: number; body: string }
+  }): ReturnType<typeof vi.spyOn> {
+    let idx = 0
+    return vi.spyOn(globalThis, "fetch").mockImplementation(((
+      input: string | URL | Request,
+    ) => {
+      const url = typeof input === "string" ? input : input.toString()
+      if (url.includes("/copilot_internal/v2/token")) {
+        if (opts.tokenRefresh?.ok) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                token: opts.tokenRefresh.token,
+                refresh_in: 1500,
+                expires_at: 9_999_999_999,
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            ),
+          )
+        }
+        return Promise.resolve(
+          new Response(opts.tokenRefresh!.body, { status: opts.tokenRefresh!.status }),
+        )
+      }
+      if (url.endsWith("/responses")) {
+        const r = opts.responses[idx]
+        if (!r) throw new Error(`unexpected /responses call #${idx + 1}`)
+        idx += 1
+        return Promise.resolve(r)
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }) as unknown as typeof fetch)
+  }
+
+  test("401 token-expired + refresh success: retries once", async () => {
+    const fetchSpy = mockScript({
+      responses: [
+        new Response("token expired", { status: 401 }),
+        new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
+      ],
+      tokenRefresh: { ok: true, token: "fresh-jwt" },
+    })
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+    vi.useFakeTimers({ now: Date.now() + 60_000 })
+
+    const client = createDefaultCopilotResponsesClient()
+    await client.send({ model: "gpt-5", input: "hi" })
+    expect(state.copilotToken).toBe("fresh-jwt")
+    expect(tokenSignal.readScore()).toBe(3)
+
+    vi.useRealTimers()
+    fetchSpy.mockRestore()
+  })
+
+  test("401 non-token-expired: throws without refreshNow", async () => {
+    const fetchSpy = mockScript({
+      responses: [new Response("forbidden", { status: 401 })],
+    })
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+
+    const client = createDefaultCopilotResponsesClient()
+    await expect(client.send({ model: "gpt-5", input: "hi" })).rejects.toThrow(
+      "Failed to create responses",
+    )
+    expect(state.copilotToken).toBe("stale-jwt")
+    expect(tokenSignal.readScore()).toBe(1)
+    fetchSpy.mockRestore()
   })
 })

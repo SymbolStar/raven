@@ -11,6 +11,11 @@ import {
 } from "../../src/upstream/copilot-native"
 import type { AnthropicMessagesPayload } from "../../src/protocols/anthropic/types"
 import { upstreamCharacterisations } from "./__characterisation__/upstream-fixtures"
+import {
+  bootstrap as sentinelBootstrap,
+  type SentinelHandle,
+} from "../../src/lib/token-sentinel"
+import { _resetTokenSignalForTest, tokenSignal } from "../../src/lib/token-signal"
 
 function makePayload(overrides: Partial<AnthropicMessagesPayload> = {}): AnthropicMessagesPayload {
   return {
@@ -152,6 +157,15 @@ describe("CopilotNativeClient (E.4)", () => {
       getBaseUrl: () => "https://inj.example.com",
       getHeaders: () => ({ "x-injected": "yes" }),
       getProxyUrl: () => "http://127.0.0.1:9999",
+      snapshotAuth: ({ anthropicBeta, isAgentCall }) => {
+        const headers: Record<string, string> = {
+          "x-injected": "yes",
+          "anthropic-version": "2023-06-01",
+          "X-Initiator": isAgentCall ? "agent" : "user",
+        }
+        if (anthropicBeta) headers["anthropic-beta"] = anthropicBeta
+        return { token: "inj", headers }
+      },
     })
     await client.send({
       payload: makePayload({ messages: [{ role: "user", content: "hi" }] }),
@@ -289,5 +303,107 @@ describe("CopilotNativeClient (E.4)", () => {
     expect(tool.strict).toBeUndefined()
     expect(tool.name).toBe("lookup")
     expect(tool.input_schema).toEqual({ type: "object" })
+  })
+})
+
+// ===========================================================================
+// 401 retry matrix (phase 2.4)
+// ===========================================================================
+
+describe("CopilotNativeClient — 401 retry matrix", () => {
+  let handle: SentinelHandle | null = null
+
+  beforeEach(() => {
+    spy.mockRestore()
+    _resetTokenSignalForTest()
+    state.copilotToken = "stale-jwt"
+    state.vsCodeVersion = "1.117.0"
+    state.copilotChatVersion = "0.45.1"
+    state.accountType = "individual"
+  })
+
+  afterEach(() => {
+    if (handle) {
+      handle.stop()
+      handle = null
+    }
+  })
+
+  function mockFetchScript(opts: {
+    msgsResponses: Response[]
+    tokenRefresh?:
+      | { ok: true; token: string }
+      | { ok: false; status: number; body: string }
+  }): ReturnType<typeof vi.spyOn> {
+    let idx = 0
+    return vi.spyOn(globalThis, "fetch").mockImplementation(((
+      input: string | URL | Request,
+    ) => {
+      const url = typeof input === "string" ? input : input.toString()
+      if (url.includes("/copilot_internal/v2/token")) {
+        if (opts.tokenRefresh?.ok) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                token: opts.tokenRefresh.token,
+                refresh_in: 1500,
+                expires_at: 9_999_999_999,
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            ),
+          )
+        }
+        return Promise.resolve(
+          new Response(opts.tokenRefresh!.body, { status: opts.tokenRefresh!.status }),
+        )
+      }
+      if (url.endsWith("/v1/messages")) {
+        const r = opts.msgsResponses[idx]
+        if (!r) throw new Error(`unexpected /v1/messages call #${idx + 1}`)
+        idx += 1
+        return Promise.resolve(r)
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }) as unknown as typeof fetch)
+  }
+
+  test("401 token-expired + refresh success: retries once with fresh token", async () => {
+    const fetchSpy = mockFetchScript({
+      msgsResponses: [
+        new Response("token expired", { status: 401 }),
+        new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
+      ],
+      tokenRefresh: { ok: true, token: "fresh-jwt" },
+    })
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+    vi.useFakeTimers({ now: Date.now() + 60_000 })
+
+    const client = createDefaultCopilotNativeClient()
+    const r = await client.send({
+      payload: makePayload(),
+      options: { copilotModel: "claude-x" },
+    })
+    expect(r).toEqual({})
+    expect(state.copilotToken).toBe("fresh-jwt")
+    expect(tokenSignal.readScore()).toBe(3)
+
+    vi.useRealTimers()
+    fetchSpy.mockRestore()
+  })
+
+  test("401 non-token-expired: throws without refreshNow", async () => {
+    const fetchSpy = mockFetchScript({
+      msgsResponses: [new Response("unauthorized", { status: 401 })],
+    })
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+
+    const client = createDefaultCopilotNativeClient()
+    await expect(
+      client.send({ payload: makePayload(), options: { copilotModel: "claude-x" } }),
+    ).rejects.toThrow("Failed to create native messages")
+
+    expect(state.copilotToken).toBe("stale-jwt")
+    expect(tokenSignal.readScore()).toBe(1)
+    fetchSpy.mockRestore()
   })
 })
