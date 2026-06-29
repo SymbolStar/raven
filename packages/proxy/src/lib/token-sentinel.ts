@@ -206,6 +206,15 @@ function scheduleNext(
   timers: TimerFactory,
   opts: { tickFailed?: boolean } = {},
 ): void {
+  // Stale guard: if this scheduleNext is being called from a tick whose state
+  // / timer factory no longer matches the currently active loop (because
+  // bootstrap re-entry or stop() happened mid-tick), do not touch global
+  // state. Otherwise an old tick can:
+  //   - clear the new loop's pendingTimeoutHandle (orphan it), and/or
+  //   - install its own setTimeout, effectively reviving the dead sentinel.
+  if (s !== sentinelState || timers !== activeTimers) {
+    return
+  }
   if (opts.tickFailed) {
     // 失败 / fatal：强制 STEADY，让 cooldown 结束后必走主动 scheduled refresh
     s.mode = "steady"
@@ -238,14 +247,10 @@ function scheduleNext(
 
   const nextMs = computeNextDelay(s.mode)
   // Defensively clear any existing pending handle before assigning a new one.
-  // The race we guard against: sentinelTick clears pendingTimeoutHandle at
-  // entry, then awaits cacheModels(); during the await an external LLM
-  // refreshNow() finishes and calls rearmSentinelAfterRefresh(false) →
-  // scheduleNext() → assigns a new pendingTimeoutHandle. When the original
-  // tick resumes and calls scheduleNext() at end-of-tick, without this
-  // clear the LLM-side timer would be orphaned (still scheduled, no longer
-  // tracked) and fire as a parallel sentinel loop.
-  if (timers === activeTimers && pendingTimeoutHandle) {
+  // (Race: external LLM refreshNow rearm during this tick's await of
+  // cacheModels could have already scheduled a timer.)
+  // We've already verified above that timers === activeTimers.
+  if (pendingTimeoutHandle) {
     timers.clearTimeout(pendingTimeoutHandle)
   }
   pendingTimeoutHandle = timers.setTimeout(() => {
@@ -257,6 +262,15 @@ function scheduleNext(
 }
 
 async function sentinelTick(s: SentinelState, timers: TimerFactory): Promise<void> {
+  // Stale guard at entry: if a teardown/bootstrap happened between this
+  // tick being scheduled and now firing, just exit. Don't touch
+  // pendingTimeoutHandle / forceSteadyAfterCooldown — those belong to the
+  // currently active loop. Anything written here would be a stray side
+  // effect from a dead loop.
+  if (s !== sentinelState || timers !== activeTimers) {
+    return
+  }
+
   // tick 已触发 → 不再代表未来挂起
   pendingTimeoutHandle = null
   dirtyAfterTick = false
@@ -273,6 +287,9 @@ async function sentinelTick(s: SentinelState, timers: TimerFactory): Promise<voi
     // ── STEADY: 主动 scheduled refresh ──
     if (s.mode === "steady" && !inCooldown) {
       const result = await refreshNow("scheduled", undefined, { fromSentinelTick: true })
+      // Re-check staleness after await: bootstrap/stop could have run while
+      // refreshNow was in flight.
+      if (s !== sentinelState || timers !== activeTimers) return
       if (!result.ok) {
         logger.warn("scheduled refresh failed in steady tick", {
           error: String(result.error),
@@ -287,9 +304,12 @@ async function sentinelTick(s: SentinelState, timers: TimerFactory): Promise<voi
     if (!inCooldown) {
       try {
         await cacheModels()
+        if (s !== sentinelState || timers !== activeTimers) return
       } catch (e) {
+        if (s !== sentinelState || timers !== activeTimers) return
         if (isAuthError(e)) {
           await refreshNow("sentinel-401", undefined, { fromSentinelTick: true })
+          if (s !== sentinelState || timers !== activeTimers) return
           // 本 tick 不递归 cacheModels
         } else {
           logger.warn("sentinel /models failed (non-auth)", { error: String(e) })
@@ -303,6 +323,7 @@ async function sentinelTick(s: SentinelState, timers: TimerFactory): Promise<voi
   } catch (fatal) {
     // I-4: 任何意外异常都不让 loop 死
     logger.error("sentinel tick fatal", { error: String(fatal) })
+    if (s !== sentinelState || timers !== activeTimers) return
     try {
       scheduleNext(s, timers, { tickFailed: true })
     } catch (rescheduleErr) {

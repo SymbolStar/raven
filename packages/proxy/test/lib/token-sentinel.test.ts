@@ -547,6 +547,86 @@ describe("generation isolation", () => {
     expect(_debugSnapshot().cooldownRemaining).toBe(0)
     expect(_debugSnapshot().consecutiveFailures).toBe(0)
   })
+
+  test("after stop()+bootstrap(), the live pending timer belongs to the NEW loop (old tick cannot revive)", async () => {
+    startSentinel("tok-1", 1500)
+
+    // Hang the first tick's scheduled refresh
+    let resolveOld!: (v: { token: string; refresh_in: number; expires_at: number }) => void
+    const oldPromise = new Promise<{ token: string; refresh_in: number; expires_at: number }>(
+      (resolve) => {
+        resolveOld = resolve
+      },
+    )
+    getCopilotTokenMock.mockReturnValueOnce(oldPromise)
+    void harness.flushPending()
+    for (let i = 0; i < 5; i++) await Promise.resolve()
+    expect(_debugSnapshot().hasInflight).toBe(true)
+
+    // Stop and re-bootstrap with a NEW timer factory so we can tell ticks apart
+    handle!.stop()
+    handle = null
+    const newHarness = createFakeTimers()
+    handle = bootstrap({
+      token: "tok-NEW",
+      refreshInSeconds: 1500,
+      timers: newHarness.factory,
+    })
+    // After bootstrap, the new loop scheduled exactly one timer (on newHarness)
+    expect(newHarness.timers.filter((t) => !t.cleared && !t.fired)).toHaveLength(1)
+    const newPending = newHarness.timers[0]!
+
+    // Resolve the OLD refresh — old tick will resume and try to scheduleNext.
+    // With the stale guard in place, it must NOT touch any timer or
+    // pendingTimeoutHandle of the new loop.
+    resolveOld({ token: "tok-OLD", refresh_in: 1500, expires_at: 9_999_999_999 })
+    for (let i = 0; i < 5; i++) await Promise.resolve()
+
+    // The new loop's pending timer is still the same instance, still alive,
+    // and no other live timer was created on the old harness.
+    const newLive = newHarness.timers.filter((t) => !t.cleared && !t.fired)
+    expect(newLive).toHaveLength(1)
+    expect(newLive[0]!.id).toBe(newPending.id)
+
+    const oldLive = harness.timers.filter((t) => !t.cleared && !t.fired)
+    expect(oldLive).toHaveLength(0)
+
+    // Cleanup — stop the new handle explicitly
+    handle!.stop()
+    handle = null
+  })
+
+  test("after stop() (no re-bootstrap), old tick resolve produces NO new pending timer", async () => {
+    startSentinel("tok-1", 1500)
+
+    let resolveOld!: (v: { token: string; refresh_in: number; expires_at: number }) => void
+    const oldPromise = new Promise<{ token: string; refresh_in: number; expires_at: number }>(
+      (resolve) => {
+        resolveOld = resolve
+      },
+    )
+    getCopilotTokenMock.mockReturnValueOnce(oldPromise)
+    void harness.flushPending()
+    for (let i = 0; i < 5; i++) await Promise.resolve()
+    expect(_debugSnapshot().hasInflight).toBe(true)
+
+    handle!.stop()
+    handle = null
+    expect(_debugSnapshot().pendingTimer).toBe(false)
+
+    // Old tick resolves with a refresh result that, without the stale guard,
+    // would call scheduleNext and create a new timer.
+    resolveOld({ token: "tok-OLD", refresh_in: 1500, expires_at: 9_999_999_999 })
+    // Drain microtasks so the tick's whole post-await path runs
+    // (refreshNow finally → scheduleNext / cacheModels → scheduleNext).
+    for (let i = 0; i < 20; i++) await Promise.resolve()
+
+    // No revival: sentinelState is null, pendingTimeoutHandle stays null
+    expect(_debugSnapshot().mode).toBe(null)
+    expect(_debugSnapshot().pendingTimer).toBe(false)
+    // And no live timer on the harness
+    expect(harness.timers.filter((t) => !t.cleared && !t.fired)).toHaveLength(0)
+  })
 })
 
 // ===========================================================================
