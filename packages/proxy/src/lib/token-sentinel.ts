@@ -224,6 +224,17 @@ function scheduleNext(
   }
 
   const nextMs = computeNextDelay(s.mode)
+  // Defensively clear any existing pending handle before assigning a new one.
+  // The race we guard against: sentinelTick clears pendingTimeoutHandle at
+  // entry, then awaits cacheModels(); during the await an external LLM
+  // refreshNow() finishes and calls rearmSentinelAfterRefresh(false) →
+  // scheduleNext() → assigns a new pendingTimeoutHandle. When the original
+  // tick resumes and calls scheduleNext() at end-of-tick, without this
+  // clear the LLM-side timer would be orphaned (still scheduled, no longer
+  // tracked) and fire as a parallel sentinel loop.
+  if (timers === activeTimers && pendingTimeoutHandle) {
+    timers.clearTimeout(pendingTimeoutHandle)
+  }
   pendingTimeoutHandle = timers.setTimeout(() => {
     // Return the promise so harnesses that await `callback()` (e.g. fake
     // timers) wait for the whole tick to settle. Real setTimeout ignores

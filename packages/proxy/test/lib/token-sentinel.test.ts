@@ -654,5 +654,85 @@ describe("PROBING state machine", () => {
     expect(state.copilotToken).toBe("tok-recovered")
     expect(_debugSnapshot().forceSteadyAfterCooldown).toBe(false)
   })
+
+  test("no orphaned timer: external LLM refresh during cacheModels does NOT leak a parallel timer", async () => {
+    // Race scenario:
+    //   1. sentinelTick fires, clears pendingTimeoutHandle
+    //   2. tick's scheduled refresh succeeds, then enters cacheModels (await)
+    //   3. while cacheModels is in flight, an EXTERNAL LLM caller's refreshNow
+    //      finishes → rearmSentinelAfterRefresh(false) → scheduleNext()
+    //      schedules a new timer T1
+    //   4. cacheModels resolves; tick-end scheduleNext schedules timer T2
+    //   5. Without the defensive clear, T1 would orphan: still fire, untracked,
+    //      causing a second sentinelTick to run in parallel.
+    //
+    // We verify the defensive clear by:
+    //   - Counting how many sentinel ticks fire after a known advance window.
+    //   - Asserting only ONE timer is live (pending) after the race resolves.
+    startSentinel("tok-1", 1500)
+
+    // Pre-step: advance past min-interval so external LLM refreshNow actually
+    // calls upstream (not short-circuited).
+    await harness.advance(31_000)
+
+    // Set up: scheduled refresh succeeds quickly; cacheModels hangs until we
+    // release it; meanwhile we trigger an external LLM refreshNow.
+    let resolveCacheModels!: () => void
+    const cacheModelsPromise = new Promise<void>((r) => {
+      resolveCacheModels = r
+    })
+    cacheModelsMock.mockReset()
+    cacheModelsMock.mockReturnValueOnce(cacheModelsPromise)
+    getCopilotTokenMock.mockResolvedValueOnce({
+      token: "tok-2",
+      refresh_in: 1500,
+      expires_at: 9_999_999_999,
+    })
+
+    // Fire the pending tick — it will: run scheduled refresh (sync mock
+    // resolves), then await cacheModels (now hanging).
+    void harness.flushPending()
+    // Yield enough microtasks for refreshNow + cacheModels start
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+
+    // At this point: sentinel is in the middle of the tick, awaiting
+    // cacheModels. pendingTimeoutHandle was cleared at tick entry and not
+    // yet reset.
+    expect(_debugSnapshot().pendingTimer).toBe(false)
+
+    // External LLM caller triggers a refresh that has to actually hit upstream
+    // (the scheduled one updated lastSuccessAt, so min-interval blocks new
+    // upstream calls — but attemptedToken short-circuit fires instead, which
+    // does NOT rearm. So we need a true upstream call to trigger non-sentinel
+    // rearm. Use attemptedToken=current token to bypass short-circuit, advance
+    // past min-interval first.
+    await harness.advance(31_000)
+    getCopilotTokenMock.mockResolvedValueOnce({
+      token: "tok-llm",
+      refresh_in: 1500,
+      expires_at: 9_999_999_999,
+    })
+    await refreshNow("llm-401") // non-sentinel-owned → goes through immediate rearm
+
+    // Now the external rearm has assigned pendingTimeoutHandle to T1.
+    expect(_debugSnapshot().pendingTimer).toBe(true)
+    const timersAfterLlmRearm = harness.timers.filter((t) => !t.cleared && !t.fired)
+    const timersCountAfterLlmRearm = timersAfterLlmRearm.length
+
+    // Release cacheModels — original tick resumes and calls scheduleNext at end.
+    resolveCacheModels()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+
+    // Critical assertion: tick-end scheduleNext must have cleared T1 before
+    // assigning T2. Otherwise we'd have 2 live timers.
+    const livePending = harness.timers.filter((t) => !t.cleared && !t.fired)
+    expect(livePending).toHaveLength(1)
+    // And the one alive should be more recent (id > T1's id)
+    expect(livePending[0]!.id).toBeGreaterThan(
+      timersAfterLlmRearm[timersAfterLlmRearm.length - 1]!.id,
+    )
+    // Count derivable invariant: only T2 alive, T1 must have been cleared.
+    void timersCountAfterLlmRearm
+  })
 })
 
