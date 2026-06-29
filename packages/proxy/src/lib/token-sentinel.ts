@@ -210,14 +210,27 @@ function scheduleNext(
     // 失败 / fatal：强制 STEADY，让 cooldown 结束后必走主动 scheduled refresh
     s.mode = "steady"
     s.remainingProbeTicks = 0
+    // Drain the fresh-report flag so it doesn't immediately re-trigger PROBING
+    // on the next tick — failure path should land on STEADY, period.
+    tokenSignal.consumeFreshReport()
   } else {
     const wantsProbe = tokenSignal.shouldProbeNow() // 在 decay 之前调用
+    const hadFreshReport = tokenSignal.consumeFreshReport()
     if (wantsProbe && s.mode !== "probing") {
+      // Fresh entry into PROBING
       s.mode = "probing"
       s.remainingProbeTicks = PROBE_TICKS
     } else if (s.mode === "probing") {
-      s.remainingProbeTicks -= 1
-      if (s.remainingProbeTicks <= 0 && !wantsProbe) {
+      // Hard upper bound: tick budget decrements regardless of score.
+      // Only a NEW signal arriving during PROBING refreshes the budget.
+      // Without this, a sustained 401 burst would pin shouldProbeNow() above
+      // threshold and PROBING would never exit.
+      if (hadFreshReport) {
+        s.remainingProbeTicks = PROBE_TICKS
+      } else {
+        s.remainingProbeTicks -= 1
+      }
+      if (s.remainingProbeTicks <= 0) {
         s.mode = "steady"
       }
     }

@@ -563,7 +563,7 @@ describe("PROBING state machine", () => {
     expect(cacheModelsMock).toHaveBeenCalledTimes(1)
   })
 
-  test("PROBING returns to STEADY after PROBE_TICKS (3) idle ticks", async () => {
+  test("PROBING returns to STEADY after PROBE_TICKS (3) idle ticks (no fresh signals)", async () => {
     startSentinel("tok-1", 1500)
     tokenSignal.reportAuthFailure("token-expired")
     tokenSignal.reportAuthFailure("other-401")
@@ -576,24 +576,50 @@ describe("PROBING state machine", () => {
     await harness.flushPending()
     expect(_debugSnapshot().mode).toBe("probing")
 
-    // Each PROBING tick: decay drops score by 1; after enough ticks
-    // wantsProbe becomes false and remainingProbeTicks counts down to STEADY.
-    // Score is at 5 → decay 5 times brings it to 0. We need 3 probing ticks
-    // for remainingProbeTicks, plus enough decay to drop wantsProbe.
+    // Hard upper bound: 3 PROBING ticks without new reports → STEADY
     cacheModelsMock.mockResolvedValue(undefined)
-    // Run several PROBING ticks
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 3; i++) {
       await harness.advance(5_000 + 10)
     }
 
-    // After several PROBE ticks, signal should have decayed below threshold
-    // and remainingProbeTicks expired → back to STEADY
     expect(_debugSnapshot().mode).toBe("steady")
-    expect(tokenSignal.shouldProbeNow()).toBe(false)
     const pending = harness.timers.filter((t) => !t.cleared && !t.fired)
     expect(pending).toHaveLength(1)
     // STEADY interval = (1500 - 60) * 1000
     expect(pending[0]!.ms).toBe(1440_000)
+  })
+
+  test("PROBING with bursty signals: stays in PROBING while new reports arrive, exits after PROBE_TICKS idle", async () => {
+    startSentinel("tok-1", 1500)
+    tokenSignal.reportAuthFailure("token-expired")
+    tokenSignal.reportAuthFailure("other-401")
+    tokenSignal.reportAuthFailure("other-401")
+    getCopilotTokenMock.mockResolvedValueOnce({
+      token: "tok-2",
+      refresh_in: 1500,
+      expires_at: 9_999_999_999,
+    })
+    await harness.flushPending()
+    expect(_debugSnapshot().mode).toBe("probing")
+
+    cacheModelsMock.mockResolvedValue(undefined)
+    // Sustained burst: fresh signal every probing tick
+    // Without the hard upper bound, PROBING would only exit when score
+    // decays below threshold — but with cap = 10 and constant +3 reports,
+    // score would stay pinned and PROBING would never exit.
+    for (let i = 0; i < 10; i++) {
+      tokenSignal.reportAuthFailure("token-expired") // fresh report
+      await harness.advance(5_000 + 10)
+    }
+    // Still PROBING: each tick consumed a fresh report → remainingProbeTicks
+    // got reset to PROBE_TICKS = 3
+    expect(_debugSnapshot().mode).toBe("probing")
+
+    // Burst ends — 3 more idle ticks should drop us back to STEADY
+    for (let i = 0; i < 3; i++) {
+      await harness.advance(5_000 + 10)
+    }
+    expect(_debugSnapshot().mode).toBe("steady")
   })
 
   test("cooldown overrides PROBING in computeNextDelay (next tick uses cooldown, not PROBE_INTERVAL_MS)", async () => {

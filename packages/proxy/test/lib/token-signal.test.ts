@@ -68,6 +68,33 @@ describe("tokenSignal", () => {
     tokenSignal.decay() // 5 → 4
     expect(tokenSignal.shouldProbeNow()).toBe(false)
   })
+
+  test("score is capped (cannot exceed SIGNAL_THRESHOLD * 2 = 10)", () => {
+    // Pile on many signals
+    for (let i = 0; i < 20; i++) {
+      tokenSignal.reportAuthFailure("token-expired")
+    }
+    expect(tokenSignal.readScore()).toBe(10)
+    // After 6 decays we should fall below threshold (10 → 4)
+    for (let i = 0; i < 6; i++) tokenSignal.decay()
+    expect(tokenSignal.readScore()).toBe(4)
+    expect(tokenSignal.shouldProbeNow()).toBe(false)
+  })
+
+  test("consumeFreshReport returns true after report; false when drained", () => {
+    expect(tokenSignal.consumeFreshReport()).toBe(false)
+    tokenSignal.reportAuthFailure("token-expired")
+    expect(tokenSignal.consumeFreshReport()).toBe(true)
+    // Second consume in a row without new report → false
+    expect(tokenSignal.consumeFreshReport()).toBe(false)
+  })
+
+  test("decay does NOT count as fresh report", () => {
+    tokenSignal.reportAuthFailure("other-401")
+    expect(tokenSignal.consumeFreshReport()).toBe(true)
+    tokenSignal.decay()
+    expect(tokenSignal.consumeFreshReport()).toBe(false)
+  })
 })
 
 describe("isTokenExpiredBody", () => {

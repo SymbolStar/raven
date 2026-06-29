@@ -19,6 +19,13 @@ export interface TokenSignal {
   reportAuthFailure(reason: AuthFailureReason): void
   shouldProbeNow(): boolean
   decay(): void
+  /**
+   * Returns true if reportAuthFailure() has been called at least once since
+   * the previous consumeFreshReport() call. Used by the sentinel to decide
+   * whether to extend PROBING's remainingProbeTicks (only fresh signals
+   * extend; sustained high score alone does not).
+   */
+  consumeFreshReport(): boolean
   /** For tests / metrics only. */
   readScore(): number
 }
@@ -26,20 +33,33 @@ export interface TokenSignal {
 const SIGNAL_THRESHOLD = 5
 const SIGNAL_TOKEN_EXPIRED_WEIGHT = 3
 const SIGNAL_OTHER_401_WEIGHT = 1
+// Bound score so a sustained 401 burst cannot pin shouldProbeNow() above
+// threshold for arbitrarily long. With cap = THRESHOLD * 2, a burst takes at
+// most (cap - THRESHOLD + 1) decay ticks to fall below threshold once burst
+// ends — bounded recovery time independent of burst size.
+const SIGNAL_SCORE_CAP = SIGNAL_THRESHOLD * 2
 
 let score = 0
+let pendingFreshReport = false
 
 export const tokenSignal: TokenSignal = {
   reportAuthFailure(reason: AuthFailureReason): void {
-    score += reason === "token-expired"
+    const delta = reason === "token-expired"
       ? SIGNAL_TOKEN_EXPIRED_WEIGHT
       : SIGNAL_OTHER_401_WEIGHT
+    score = Math.min(SIGNAL_SCORE_CAP, score + delta)
+    pendingFreshReport = true
   },
   shouldProbeNow(): boolean {
     return score >= SIGNAL_THRESHOLD
   },
   decay(): void {
     score = Math.max(0, score - 1)
+  },
+  consumeFreshReport(): boolean {
+    const had = pendingFreshReport
+    pendingFreshReport = false
+    return had
   },
   readScore(): number {
     return score
@@ -49,6 +69,7 @@ export const tokenSignal: TokenSignal = {
 /** Test-only: reset internal score to 0. Production code never calls this. */
 export function _resetTokenSignalForTest(): void {
   score = 0
+  pendingFreshReport = false
 }
 
 // ---------------------------------------------------------------------------
