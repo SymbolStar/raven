@@ -181,13 +181,18 @@ let activeTimers: TimerFactory | null = null
 let pendingTimeoutHandle: ReturnType<TimerFactory["setTimeout"]> | null = null
 let sentinelState: SentinelState | null = null
 
-// ── Tick re-entry guard ──
-// tickInProgress 区分"refreshNow 是否在 sentinelTick 同步上下文中被调用"。
-//   - tick 外（LLM 路径 / 测试手动 refreshNow）：完成后立即 clear + rearm。
-//   - tick 内（scheduled / sentinel-401）：只置 dirty 标志，
-//     由 tick 末的 scheduleNext 统一安排——避免在 tick 内 rearm 一次、
-//     tick 末再 schedule 一次，导致双挂起 timer。
-let tickInProgress = false
+// ── Generation / epoch ──
+// 每次 bootstrap()/teardownInternal() 递增 generation。inflight refresh 完成时
+// 校验"当前 generation 仍是发起时的那个"，否则视为来自已废弃的 loop，
+// 不写 state.copilotToken、不调 noteSuccess/noteFailure、不 rearm 新 loop。
+// 这避免旧 loop 的飞行刷新污染新 bootstrap() 后的状态。
+let generation = 0
+
+// ── Rearm 抑制（细粒度，比 tickInProgress 更窄） ──
+// suppressRearm 只在 sentinelTick 主动 await 自己发起的 refreshNow 的那段
+// 同步上下文内为 true。tick 中 await cacheModels() 期间外部 LLM 触发的
+// refreshNow 仍会走"立即 rearm"路径——更贴近"LLM 失败后立刻自动恢复"的承诺。
+let suppressRearm = false
 let dirtyAfterTick = false
 
 /**
@@ -201,15 +206,15 @@ let dirtyAfterTick = false
  *     发现这一事实。
  *
  * 但 rearm 时机要分清：
- *   - 若当前正在 sentinelTick 内（tickInProgress=true），rearm 会与
- *     tick 末的 scheduleNext 重复发起两次挂起 timer。这种情况只置
- *     dirtyAfterTick=true；scheduleNext 始终会跑，无需额外动作。
- *   - 否则（LLM 路径或测试外部调用），立即 clear 当前挂起 handle
- *     并触发一次 scheduleNext。
+ *   - 若当前 suppressRearm=true（哨兵自己刚发起的那个 refreshNow），
+ *     rearm 会与 tick 末的 scheduleNext 重复发起两次挂起 timer。这种情况
+ *     只置 dirtyAfterTick=true；scheduleNext 始终会跑，无需额外动作。
+ *   - 否则（LLM 路径 / 测试外部 / tick 在 cacheModels 阶段被外部并发触发），
+ *     立即 clear 当前挂起 handle 并触发一次 scheduleNext。
  */
 function rearmSentinelAfterRefresh() {
   if (!sentinelState || !activeTimers) return
-  if (tickInProgress) {
+  if (suppressRearm) {
     dirtyAfterTick = true   // 由 tick 末 scheduleNext 收尾
     return
   }
@@ -286,10 +291,25 @@ export async function refreshNow(
     return { ok: true, tokenWasUpdated: false, refreshInSeconds: null }
   }
 
+  // ── 5. Capture generation：用于完成时判定本次刷新是否仍属于活动 loop ──
+  const myGeneration = generation
+
   inflight = (async () => {
     try {
-      const oldToken = state.copilotToken
       const { token, refresh_in } = await getCopilotToken()
+
+      // ── 旧 loop 兜底：若 bootstrap()/stop() 已经切到新 generation，
+      //    本次刷新视为废弃：不写 state、不调 noteSuccess、不 rearm ──
+      if (myGeneration !== generation) {
+        logger.debug("refreshNow result discarded (stale generation)", {
+          reason,
+          myGeneration,
+          currentGeneration: generation,
+        })
+        return { ok: true, tokenWasUpdated: false, refreshInSeconds: null }
+      }
+
+      const oldToken = state.copilotToken
       state.copilotToken = token       // I-1 的唯一写入点
       noteSuccess(refresh_in)
       return {
@@ -298,6 +318,18 @@ export async function refreshNow(
         refreshInSeconds: refresh_in,
       }
     } catch (error) {
+      // 失败时同样校验 generation：旧 loop 的失败不该影响新 loop 的 cooldown
+      if (myGeneration !== generation) {
+        logger.debug("refreshNow failure discarded (stale generation)", {
+          reason,
+          error: String(error),
+        })
+        return {
+          ok: false,
+          error: new Error("stale generation"),
+          cooldownMs: 0,
+        }
+      }
       const cooldownMs = noteFailure()
       logger.error("refreshNow failed", {
         reason,
@@ -307,10 +339,15 @@ export async function refreshNow(
       })
       return { ok: false, error, cooldownMs }
     } finally {
-      inflight = null
-      // 任何状态变化（成功 → lastRefreshInSeconds；失败 → cooldown）
-      // 都必须 rearm 哨兵 timer，否则挂起的 tick 仍按旧调度等。
-      rearmSentinelAfterRefresh()
+      // 注意：清 inflight 与 rearm 只对当前 generation 生效
+      if (myGeneration === generation) {
+        inflight = null
+        // 任何状态变化（成功 → lastRefreshInSeconds；失败 → cooldown）
+        // 都必须 rearm 哨兵 timer，否则挂起的 tick 仍按旧调度等。
+        rearmSentinelAfterRefresh()
+      }
+      // 若 generation 已切换：新 loop 的 inflight 已是 null（teardown 时清过），
+      // 新 loop 自己的 refreshNow 调用会重新设置；这里不动它。
     }
   })()
 
@@ -324,12 +361,16 @@ export async function refreshNow(
 - **`tokenWasUpdated` 是 caller 的重试开关**：true 才值得重试；false 表示"现在 token 不变，再用一次会得到同样的 401"。
 - **失败冷却全局共享（关键）**：`failureCooldownUntil` / `consecutiveFailures` 是模块级、所有触发源（`llm-401` / `sentinel-401` / `scheduled` / `manual`）共享的退避状态。一次失败后无论谁来调用，在冷却窗口内都直接返回 `ok:false, cooldownMs>0`，**不会**敲上游。这统一了旧 `retryTokenRefresh` 的行为，并堵住"LLM 路径触发失败后下一个请求立即又触发"的风暴。冷却 = `5s, 10s, 20s, …` 上限 `5min`，成功后清零。
 - **`refreshInSeconds` 由 sentinel 模块内部统一记录**：成功刷新时 `noteSuccess(refresh_in)` 写入 `lastRefreshInSeconds`，与触发来源无关。任何 caller 都能通过 `getLastRefreshInSeconds()` 拿到最新值。这避免了"LLM 路径触发刷新成功 → 但 sentinel 调度仍用 bootstrap 时的旧 refresh_in"。哨兵 `scheduleNext` 直接读这个全局值，不依赖 `result.refreshInSeconds` 是否非 null。`RefreshResult.refreshInSeconds` 字段保留只是给 caller 一个观察值，非协议必需。
-- **`refreshNow` 内 rearm 哨兵 timer，分内外两条路径（关键）**：`finally` 调 `rearmSentinelAfterRefresh()`：
-  - **tick 外调用**（LLM 路径 / 手动 / 测试）：立刻 clear 当前 `pendingTimeoutHandle` 并跑 `scheduleNext`，把哨兵 timer 按最新 `lastRefreshInSeconds` / `cooldownRemaining` 重排。**这是后台失败后无需 LLM 唤醒就自动恢复的机制**。
-  - **tick 内调用**（scheduled / sentinel-401，因为 `sentinelTick` 同步上下文中 await `refreshNow`）：仅置 `dirtyAfterTick=true` 标志，由 tick 末的 `scheduleNext` 统一收尾。这避免了"tick 内 rearm 一次、tick 末 scheduleNext 又一次"导致双挂起 timer。
-  - 用 `tickInProgress` 模块标志区分；二者共享同一个 single-flight + cooldown 状态，无竞态。
-- **`sentinelTick` 入口清 `pendingTimeoutHandle`**：timer 已经触发，handle 不再代表"未来挂起"。保持 `pendingTimeoutHandle` 语义为"仅指向未来一次挂起 timer"，让 tick 内的 rearm 路径行为可预测。
-- **`bootstrap` 防重入**：开头检测已有活动 loop 时先 `teardownInternal()` 清旧 timer 再建新。`setupCopilotToken({force})` 重复初始化或测试套件中反复 bootstrap 不会产生并行 loop。
+- **`refreshNow` 内 rearm 哨兵 timer，分两条路径（关键）**：`finally` 调 `rearmSentinelAfterRefresh()`：
+  - **suppressRearm=false**（LLM 路径 / 测试外部 / tick 在 cacheModels 期间被并发触发）：立刻 clear 当前 `pendingTimeoutHandle` 并跑 `scheduleNext`，把哨兵 timer 按最新 `lastRefreshInSeconds` / `cooldownRemaining` 重排。**这是后台失败后无需 LLM 唤醒就自动恢复的机制**。
+  - **suppressRearm=true**（哨兵自己刚 await 自己发起的 refreshNow 的同步上下文内）：仅置 `dirtyAfterTick=true` 标志，由 tick 末的 `scheduleNext` 统一收尾。避免双挂起 timer。
+  - **粒度刻意收窄**：`suppressRearm` 不覆盖整个 tick，只覆盖"哨兵主动 await refreshNow"那段同步上下文。这样 tick 卡在 `cacheModels()` 阶段时，外部 LLM 触发的 `refreshNow` 仍走立即 rearm 路径——更贴近"LLM 失败后立刻自动恢复"的承诺。
+- **`generation` 兜底 stale loop（关键）**：`bootstrap()` / `teardownInternal()` 递增 `generation`。`refreshNow` 在发起时 capture 当前 generation，inflight 完成时校验 `myGeneration === generation`：
+  - 成立：正常写 `state.copilotToken` / `noteSuccess` / `rearm`；
+  - 不成立：废弃刷新结果——**不写 state、不调 noteSuccess/noteFailure、不动 cooldown、不 rearm**。
+  - 这保证旧 loop 在 `getCopilotToken()` 中飞着时被 `stop()` / `bootstrap()` 切换，旧请求完成不会污染新 loop 的 token / 失败计数 / timer。
+- **`sentinelTick` 入口清 `pendingTimeoutHandle`**：timer 已经触发，handle 不再代表"未来挂起"。保持 `pendingTimeoutHandle` 语义为"仅指向未来一次挂起 timer"，让 rearm 路径行为可预测。
+- **`bootstrap` 防重入 + generation 递增**：开头检测已有活动 loop 时先 `teardownInternal()` 清旧 timer（`teardownInternal` 内递增 `generation`）再建新。`setupCopilotToken({force})` 重复初始化或测试套件中反复 bootstrap 不会产生并行 loop，旧 inflight 即使飞着也不会污染新 state。
 - **`MIN_REFRESH_INTERVAL_MS = 30s` 是上游访问频次兜底**：与 single-flight 是正交保护。**只在 attemptedToken == 当前 state 时生效**——保证它不会误伤"晚到的尾部请求"。
 - **刷新结果不内嵌 `/models` 验证**：`refreshNow()` 拿到新 token 立刻返回。验证由两层独立机制承担：(1) LLM caller 的"用新 token 重试一次"本身就是一次实际验证；(2) 哨兵下一次 tick 的 `cacheModels()` 是后置的健康复核。把验证耦合进 `refreshNow()` 会阻塞所有等待者，得不偿失。
 
@@ -500,8 +541,6 @@ async function sentinelTick(s: SentinelState, timers: TimerFactory) {
   // 进入 tick 即清空 pendingTimeoutHandle —— 该 handle 已经触发，
   // 不再代表"未来挂起 tick"。保持变量语义为"只保存未来 timer"。
   pendingTimeoutHandle = null
-
-  tickInProgress = true
   dirtyAfterTick = false
 
   try {
@@ -509,16 +548,31 @@ async function sentinelTick(s: SentinelState, timers: TimerFactory) {
 
     // ── STEADY: 主动 scheduled refresh ──
     // ── PROBING: 不主动 refresh ──
+    //
+    // 注意：cooldown 优先级最高——即使本来要 PROBING 探活，也由
+    // scheduleNext 的优先级链统一压回 cooldown 间隔；这里直接 short-circuit。
     if (s.mode === "steady" && !inCooldown) {
-      const result = await refreshNow("scheduled")
+      // suppressRearm 包裹哨兵自己 await 的 refreshNow 同步上下文：
+      //   - 哨兵自己等的：tick 末 scheduleNext 会统一安排，不重复 rearm
+      //   - 等待期间外部 LLM 并发触发的 refreshNow：会异步入队，
+      //     等待 inflight；它的 finally 在哨兵此次 awaited 结果 resolve
+      //     之后才跑——届时 suppressRearm 已经被外层 try/finally 复位为
+      //     false，所以仍走"立即 rearm"路径，符合"LLM 失败后立即恢复"承诺。
+      suppressRearm = true
+      let result: RefreshResult
+      try {
+        result = await refreshNow("scheduled")
+      } finally {
+        suppressRearm = false
+      }
       if (!result.ok) {
         logger.warn("scheduled refresh failed in steady tick", {
           error: String(result.error),
           cooldownMs: result.cooldownMs,
         })
-        // 失败已写入全局 cooldown。本 tick 直接走 scheduleNext，按 cooldown
-        // 间隔安排下一 tick；不访问 /models（防止旧 token 401 再触发一轮无用尝试）。
-        scheduleNext(s, timers)
+        // 失败已写入全局 cooldown。本 tick 走 scheduleNext，按 cooldown
+        // 间隔安排下一 tick；不访问 /models（防止旧 token 401 再触发无用尝试）。
+        scheduleNext(s, timers, { tickFailed: true })
         return
       }
     }
@@ -528,13 +582,22 @@ async function sentinelTick(s: SentinelState, timers: TimerFactory) {
     // refreshNow("sentinel-401") 立即命中 cooldown 返回 ok:false，
     // 而 cacheModels 自身还是会真实打 /models 给上游（不是 token 接口，
     // 但仍是上游访问）。冷却期不该探活。
+    //
+    // 关键：cacheModels 是 await 点，哨兵自己不在这里 await refreshNow，
+    // 所以 suppressRearm=false。LLM 路径在此期间并发触发的 refreshNow
+    // 会走立即 rearm 路径，不会被本 tick 抑制。
     if (!inCooldown) {
       try {
         await cacheModels()
       } catch (e) {
         if (isAuthError(e)) {
-          await refreshNow("sentinel-401")
-          // tick 内的 refreshNow 只置 dirtyAfterTick；本 tick 不递归 cacheModels。
+          suppressRearm = true
+          try {
+            await refreshNow("sentinel-401")
+          } finally {
+            suppressRearm = false
+          }
+          // 本 tick 不递归 cacheModels
         } else {
           logger.warn("sentinel /models failed (non-auth)", { error: String(e) })
         }
@@ -545,52 +608,60 @@ async function sentinelTick(s: SentinelState, timers: TimerFactory) {
     scheduleNext(s, timers)
     tokenSignal.decay()
   } catch (fatal) {
-    // I-4: 任何意外异常都不让 loop 死
+    // I-4: 任何意外异常都不让 loop 死。fatal 路径也走 scheduleNext
+    // （统一优先级 cooldown > PROBING > STEADY），避免在 cooldown 期间
+    // 因 fatal 把下一 tick 错放到 steady 周期，跳过冷却。
     logger.error("sentinel tick fatal", { error: String(fatal) })
-    pendingTimeoutHandle = timers.setTimeout(
-      () => sentinelTick(s, timers),
-      currentSteadyIntervalMs(),
-    )
+    scheduleNext(s, timers, { tickFailed: true })
   } finally {
-    tickInProgress = false
-    // dirtyAfterTick 不需要在这里 act：scheduleNext / fatal 分支已经
-    // 在 tick 结束前安排好下一次 timer，dirty 标志只是用来防止
-    // tick 内的 refreshNow 重复 schedule。tick 退出后直接丢弃即可。
     dirtyAfterTick = false
   }
 }
 
-function scheduleNext(s: SentinelState, timers: TimerFactory) {
-  const wantsProbe = tokenSignal.shouldProbeNow()    // 注意：在 decay 之前调用
+/**
+ * 优先级：失败冷却 > PROBING > STEADY 周期
+ *
+ * 把 cooldown 放在 PROBING 之前的原因：
+ *   - PROBING 是"密集探活 cacheModels"——如果当前正在 cooldown，探活
+ *     大概率会撞 401 但又无法刷 token，纯浪费上游配额。
+ *   - cooldown 期间 sentinelTick 内 inCooldown=true 也已跳过 cacheModels
+ *     与 scheduled refresh，所以这层选择确保连"以更短间隔再次空跑"也不发生。
+ *
+ * tickFailed 选项：sentinelTick 出现 scheduled refresh 失败或 fatal 异常时
+ * 传入。这种 tick 的 mode 切换被强制压回 steady，避免"refresh 失败后被
+ * PROBING 接管，cooldown 结束后又只 cacheModels 不刷 token"的死锁。
+ */
+function computeNextDelay(mode: "steady" | "probing"): number {
+  const cooldown = getRefreshCooldownRemaining()
+  if (cooldown > 0) return cooldown
+  if (mode === "probing") return PROBE_INTERVAL_MS
+  return currentSteadyIntervalMs()
+}
 
-  if (wantsProbe && s.mode !== "probing") {
-    s.mode = "probing"
-    s.remainingProbeTicks = PROBE_TICKS
-  } else if (s.mode === "probing") {
-    s.remainingProbeTicks -= 1
-    if (s.remainingProbeTicks <= 0 && !wantsProbe) {
-      s.mode = "steady"
+function scheduleNext(
+  s: SentinelState,
+  timers: TimerFactory,
+  opts: { tickFailed?: boolean } = {},
+) {
+  if (opts.tickFailed) {
+    // refresh 失败或 fatal：强制 STEADY，让 cooldown 结束后下一次 tick
+    // 必然走"主动 scheduled refresh"路径，不被 PROBING 截胡。
+    s.mode = "steady"
+    s.remainingProbeTicks = 0
+  } else {
+    const wantsProbe = tokenSignal.shouldProbeNow()    // 注意：在 decay 之前调用
+    if (wantsProbe && s.mode !== "probing") {
+      s.mode = "probing"
+      s.remainingProbeTicks = PROBE_TICKS
+    } else if (s.mode === "probing") {
+      s.remainingProbeTicks -= 1
+      if (s.remainingProbeTicks <= 0 && !wantsProbe) {
+        s.mode = "steady"
+      }
     }
   }
 
-  // 优先级：失败冷却 > PROBING > STEADY 周期
-  //
-  // 把 cooldown 放在 PROBING 之前的原因：
-  //   - PROBING 是"密集探活 cacheModels"——如果当前正在 cooldown，探活
-  //     大概率会撞 401 但又无法刷 token，纯浪费上游配额。
-  //   - cooldown 期间 sentinelTick 内 inCooldown=true 也已跳过 cacheModels
-  //     与 scheduled refresh，所以这层选择确保连"以更短间隔再次空跑"也不发生。
-  //
-  // 周期值都来自 module-global state，不再持有 SentinelState 局部副本。
-  let nextMs: number
-  const cooldown = getRefreshCooldownRemaining()
-  if (cooldown > 0) {
-    nextMs = cooldown
-  } else if (s.mode === "probing") {
-    nextMs = PROBE_INTERVAL_MS
-  } else {
-    nextMs = currentSteadyIntervalMs()
-  }
+  const nextMs = computeNextDelay(s.mode)
   pendingTimeoutHandle = timers.setTimeout(() => sentinelTick(s, timers), nextMs)
 }
 
@@ -621,20 +692,30 @@ function teardownInternal() {
   pendingTimeoutHandle = null
   sentinelState = null
   activeTimers = null
-  // tickInProgress 是同步标志，不持久跨调用——不需要这里清。
-  // 若有 inflight 刷新仍在跑，那一轮会 finally 中调 rearm，
-  // 但因为 sentinelState=null，rearm 会 early return（见
-  // rearmSentinelAfterRefresh 第一行 guard）。
+  // 递增 generation：任何已飞行的 refreshNow inflight 完成时会发现
+  // myGeneration !== generation，直接废弃结果，不写 state、不动 cooldown、
+  // 不 rearm。这堵住"旧 loop 的飞行刷新污染新 loop"的窗口。
+  generation += 1
+  // 不主动清 inflight：旧 inflight 仍然挂着，但任何外部 await 它的代码
+  // 会拿到 stale-generation 包裹的"ok:true, tokenWasUpdated:false" 结果，
+  // 安全降级为不重试。新 loop 自己的 refreshNow 调用会重新设置 inflight。
+  // 不清 suppressRearm / dirtyAfterTick：那是 tick 同步上下文的瞬态。
 }
 
 export function bootstrap(opts: BootstrapOptions): SentinelHandle {
   const timers = opts.timers ?? defaultTimers
 
-  // 防重入：如果已经有活动 loop，先清掉
+  // 防重入：如果已经有活动 loop，先清掉（含递增 generation）
   if (sentinelState || pendingTimeoutHandle) {
     logger.warn("sentinel.bootstrap called while loop is active; resetting")
     teardownInternal()
   }
+
+  // 重置 inflight：上一代的 inflight Promise（如有）继续在后台 await
+  // getCopilotToken，但它的 finally 因 generation 不匹配会废弃结果。
+  // 这里把 module-level inflight 清空，让新 loop 的 refreshNow 能创建
+  // 自己的 inflight，不会被旧 Promise 误复用。
+  inflight = null
 
   state.copilotToken = opts.token          // I-1 的唯一写入点之一
   noteSuccess(opts.refreshInSeconds)       // 初始化 lastSuccessAt / lastRefreshInSeconds
@@ -661,13 +742,15 @@ export function bootstrap(opts: BootstrapOptions): SentinelHandle {
 - **STEADY 主动 refresh**：每个 STEADY tick 第一件事就是 `refreshNow("scheduled")`，完整继承旧 `scheduleTokenRefresh` 的"到 `refresh_in - 60s` 换 token"语义。这是修复"光靠探活无法主动换 token"的关键。
 - **上游 `refresh_in` 变化即重排（由 sentinel 模块统一记录 + timer rearm）**：哨兵 tick 不再从 `RefreshResult` 直接读 `refreshInSeconds`，而是通过 `getLastRefreshInSeconds()` 读 module-global 状态；同时 `refreshNow` 的 `finally` 主动 `rearmSentinelAfterRefresh()`，clearTimeout 当前挂起 tick 并按新值重排。无论刷新由 `scheduled` / `llm-401` / `sentinel-401` / `manual` 哪个 reason 触发，最新的 `refresh_in` 都会**立即**反映到下一次哨兵 tick——不会等到挂起 tick 自然到期才发现。
 - **失败退避走 module-global cooldown + 主动 rearm**：`refreshNow` 内部 `noteFailure()` 维护 `failureCooldownUntil` / `consecutiveFailures`（5s → 10s → … 上限 5min），`finally` 调 `rearmSentinelAfterRefresh()` 让哨兵 timer 按新 cooldown 重新计算。**LLM 路径触发的失败同样写入这个 cooldown 并 rearm**，从而堵住"LLM 失败 → 下一个请求立刻又触发"的风暴，且后台一定会在 cooldown 结束后自动恢复，不依赖下一次 LLM 请求来唤醒。
-- **cooldown 优先级最高，期间彻底静默**：`sentinelTick` 进入时若 `inCooldown` 为真则**同时跳过 scheduled refresh 和 cacheModels**；`scheduleNext` 优先级是 cooldown > PROBING > STEADY。这保证冷却期内既不打 token 接口、也不打 `/models`，连 PROBING 上下文都被冷却覆盖——anti-ban 视角下的完整静默。
+- **cooldown 优先级最高，期间彻底静默**：`sentinelTick` 进入时若 `inCooldown` 为真则**同时跳过 scheduled refresh 和 cacheModels**；`computeNextDelay` 优先级是 cooldown > PROBING > STEADY。这保证冷却期内既不打 token 接口、也不打 `/models`，连 PROBING 上下文都被冷却覆盖——anti-ban 视角下的完整静默。
 - **PROBING 不主动 refresh**：避免与 LLM 路径触发的 `refreshNow` 重复访问上游；它的角色是"高频探活，给最近的刷新结果做即时复核"。在 cooldown 期间也不会真的探活（见上一条）。
+- **`tickFailed` 强制压回 STEADY（防 PROBING-cooldown 死锁）**：scheduled refresh 失败或 fatal 异常发生时，`scheduleNext` 用 `tickFailed: true` 跳过"信号 → PROBING"的 mode 切换，强制 `s.mode = "steady"`。否则会进入这种死锁：cooldown 结束后下一 tick 因 PROBING 接管而**只 cacheModels 不刷 token**，token 永远不会被主动 refresh，要靠 `/models` 撞 401 才能恢复。`tickFailed` 保证 cooldown 一过就立刻再次尝试 scheduled refresh。
+- **fatal 路径走统一的 `scheduleNext({tickFailed: true})`**：抽出 `computeNextDelay()` 复用，保证 fatal 发生在 cooldown 期间时下一 tick 仍按 cooldown 间隔（而非误按 steady 周期）。
 - **`decay()` 在判 PROBING 之后**：旧顺序"tick 头 decay → 判阈值"会让 score 正好等于阈值的单次 token-expired 信号被衰减后落到阈值之下，无法进入 PROBING。新顺序先用 `shouldProbeNow()` 判断本 tick 的目标 mode，再 decay，让阈值语义保持"score ≥ 5 即触发"。
 - **`SentinelState` 极简**：只保留 `mode` 与 `remainingProbeTicks`。所有周期值（`steadyIntervalMs` / 冷却剩余）每次从 module-global 重新计算，避免"local 副本与 global 值不同步"的隐性 bug。
 - **单一 bootstrap 入口**：`bootstrap({ token, refreshInSeconds, timers })` 一个函数同时完成写入首把 token + 初始化 timer state + 启动 loop，返回 `{ stop }` 句柄。删除原来 `bootstrap` + `startTokenSentinel` 双入口的歧义。
 - **setTimeout 链而非 setInterval**：每个 tick 完整结束才安排下一次，从根本上杜绝重入。挂起 handle 存放在 module-global `pendingTimeoutHandle`，给 `rearmSentinelAfterRefresh` 和 `stop()` 使用。
-- **fatal try/catch 双层**：即使 `scheduleNext` 抛异常（不应该发生）也要保证下一次 tick 被安排。
+- **fatal try/catch 双层**：即使 `scheduleNext` 抛异常（不应该发生）也要保证下一次 tick 被安排（外层 catch 会再调一次 `scheduleNext({tickFailed: true})`）。
 
 ---
 
@@ -713,15 +796,17 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
 | `/models` 返回 401 | refreshNow（single-flight）；本 tick 不再递归 cacheModels，refreshNow rearm 哨兵 timer 让下一 tick 立刻按新状态计算 | 不受影响 | 无 |
 | 单次 LLM 401 + token-expired 文案 | 接收信号；in-flight refresh 复用；成功后 rearm timer → 哨兵立刻按新 refresh_in 重排 | await + 重试一次 | 无（无感） |
 | 并发 N 个 LLM 401 + token-expired | 收到 N 条信号；refresh 只跑 1 次；rearm 仅触发一次 | 全部 await 同一个 Promise → 各自重试 | 无（无感） |
+| **哨兵 cacheModels 期间外部 LLM 并发 401** | LLM 路径的 refreshNow 入队复用 inflight；finally 时 `suppressRearm=false`（粒度收窄）→ **立即 clear + rearm**，不等本 tick 结束 | await + 重试一次 | 无（无感）；后台立即恢复 |
 | LLM 401 但文案不命中 token-expired | 接收信号（other-401，权重 1） | 直接抛 401 | 用户看见 401；后续请求由哨兵 tick 兜底 |
 | LLM 路径触发 `refreshNow` 失败 | 进入全局 cooldown（5s 起，×2 上限 5min）；**rearm 哨兵 timer → 下一 tick 在 cooldown 结束时触发，无需等待下一次 LLM 请求** | 不重试，原 401 抛出 | 单次 401，cooldown 后台自动恢复 |
-| Scheduled 触发 `refreshNow` 失败 | 同上：cooldown + rearm；本 tick 直接 return，不再 cacheModels | 不受影响 | 无（短暂内部静默） |
+| Scheduled 触发 `refreshNow` 失败 | cooldown + scheduleNext({tickFailed:true}) 强制 mode=steady；本 tick 直接 return，不再 cacheModels；**cooldown 结束后下一 tick 必然走主动 scheduled refresh**（不被 PROBING 截胡） | 不受影响 | 无（短暂内部静默） |
 | **冷却期内任意触发源调 `refreshNow`** | 直接返回 `ok:false, cooldownMs>0`，**不敲上游** | 不重试，原 401 抛出 | 用户看见 401，但不会引发上游访问风暴 |
-| 冷却期内哨兵 tick 到来 | `sentinelTick` 入口检测 cooldown：跳过 scheduled refresh + cacheModels；`scheduleNext` 下一 tick 间隔 = `cooldownMs` | 不受影响 | 无 |
+| 冷却期内哨兵 tick 到来 | `sentinelTick` 入口检测 cooldown：跳过 scheduled refresh + cacheModels；`computeNextDelay` 下一 tick 间隔 = `cooldownMs` | 不受影响 | 无 |
 | 冷却 + PROBING 同时存在 | cooldown 优先级高于 PROBING；既不刷 token 也不探活 `/models` | 不受影响 | 无 |
 | `refreshNow` 成功但 token 字面没变 | 返回 `tokenWasUpdated=false`；仍 rearm（防止上游变 refresh_in） | 不重试 | 用户看见 401（防止白重试） |
 | LLM 重试仍 401 | 不二次触发 refresh（I-5） | 抛出重试响应的 HTTPError | 用户看见 401 |
-| 哨兵 tick 抛任意异常 | 双层 catch，下一 tick 仍被调度（I-4） | 不受影响 | 无 |
+| 哨兵 tick 抛任意异常 (fatal) | 外层 catch 调 `scheduleNext({tickFailed:true})`，下一 tick 按统一优先级（cooldown > PROBING > STEADY）安排；I-4 不死锁 | 不受影响 | 无 |
+| **bootstrap 被重复调用 / stop() 触发** | `teardownInternal()` 递增 generation；旧 inflight 完成时 `myGeneration !== generation` → 废弃结果，不写 state、不动 cooldown、不 rearm 新 loop | 旧请求拿到 `tokenWasUpdated=false`，不重试 | 无 |
 | 进程刚启动尚未跑过哨兵 | 第一次 tick 在 `currentSteadyIntervalMs()` 后触发 | 使用 bootstrap 的初始 JWT | 与现状一致 |
 
 ---
@@ -742,10 +827,10 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
 
 **阶段 1 — 哨兵骨架（独立 PR）**
 
-- 新增 `packages/proxy/src/lib/token-sentinel.ts`，包含 `refreshNow()`（含全局 cooldown + 主动 rearm）+ `noteSuccess/Failure` + tick loop（STEADY 状态机 + 主动 scheduled refresh + cooldown 期间静默，PROBING 留空骨架）+ **单一入口 `bootstrap({ token, refreshInSeconds, timers })`** 返回 `{ stop }` 句柄 + 周期辅助 `getLastRefreshInSeconds` / `getRefreshCooldownRemaining`。
+- 新增 `packages/proxy/src/lib/token-sentinel.ts`，包含 `refreshNow()`（含全局 cooldown + generation 校验 + 主动 rearm）+ `noteSuccess/Failure` + tick loop（STEADY 状态机 + 主动 scheduled refresh + cooldown 期间静默 + `scheduleNext({tickFailed})` 防 PROBING-cooldown 死锁，PROBING 留空骨架）+ **单一入口 `bootstrap({ token, refreshInSeconds, timers })`** 返回 `{ stop }` 句柄（含 generation 递增）+ 周期辅助 `getLastRefreshInSeconds` / `getRefreshCooldownRemaining` / `computeNextDelay`。
 - 删除 `scheduleTokenRefresh` / `retryTokenRefresh` / `refreshModelsForToken`；`setupCopilotToken` 改调 `sentinel.bootstrap(...)`，不再直接写 `state.copilotToken`。
 - LLM 路径完全不动。
-- 单测：fake timers + mocked fetch，验证 STEADY 周期、**主动 scheduled refresh**、**上游 refresh_in 变化即重排（含 timer rearm）**、**任意触发源失败均进入 module-global cooldown + 主动 rearm**、**cooldown 期间完全静默（不刷 token、不打 /models）**、refresh-on-401、单 flight、min-interval、`attemptedToken` 短路、I-4 不死锁、`stop()` 干净取消挂起 tick。
+- 单测：fake timers + mocked fetch，验证 STEADY 周期、**主动 scheduled refresh**、**上游 refresh_in 变化即重排（含 timer rearm）**、**任意触发源失败均进入 module-global cooldown + 主动 rearm**、**cooldown 期间完全静默（不刷 token、不打 /models）**、**scheduled-fail 后 cooldown 结束的下一 tick 走 STEADY（tickFailed 死锁防御）**、**fatal 路径走统一 scheduleNext（cooldown 期间不误走 steady 周期）**、**bootstrap 重入 / stop 后旧 inflight 走 generation 隔离**、refresh-on-401、单 flight、min-interval、`attemptedToken` 短路、I-4 不死锁、`stop()` 干净取消挂起 tick。
 - **本阶段不解决用户体验问题**，只把单写者 + scheduled refresh 的语义统一到哨兵。可独立合入。
 
 **阶段 2 — 等待 + 重试 + 信号（独立 PR，恢复 PR #129 的用户体验目标）**
@@ -805,9 +890,14 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
 - **`refreshNow` 失败 → inflight 被清空**：失败后下一次调用能正常发起新刷新（前提：cooldown 已过或冷却期为 0）
 - **bootstrap 单一入口**：调用后 `state.copilotToken` 被写入、`getLastRefreshInSeconds()` 等于首个 refresh_in、loop 启动、返回的 `stop()` 能干净取消挂起 tick
 - **bootstrap 防重入**：连续两次 `bootstrap()` → 第一次的挂起 tick 被 clear，只剩第二次的；断言 `setTimeout` 实际净增量 = 1，`clearTimeout` 被调用 1 次
+- **generation 隔离 stale loop**：bootstrap → 让 `getCopilotToken` mock 挂起（pending）→ 再次 bootstrap（generation+=1）→ 第一次的 `getCopilotToken` resolve；断言 `state.copilotToken` 等于新 bootstrap 的 token（不被旧请求覆盖），`consecutiveFailures` / `failureCooldownUntil` 没被旧请求触动，新 loop 的 `pendingTimeoutHandle` 未被旧请求 rearm 取消
+- **generation 隔离 stale failure**：同上但旧 `getCopilotToken` reject；断言新 loop 的 cooldown 仍为 0
 - **tick 内 refresh 不产生双 timer**：让 sentinelTick 内的 scheduled refresh 成功 → fake-advance 时间，断言下一次 sentinelTick 只触发 **1 次**（不是 2 次）；`setTimeout` 在 tick 范围内净增量 = 1
+- **tick 内 cacheModels 期间外部 LLM 触发 refresh 立即 rearm**：让 `cacheModels` mock 挂起；期间从"外部"调 `refreshNow("llm-401")`；断言 `clearTimeout` 被立即调用（不等 tick 结束），下一 tick 时间根据新状态算出
+- **scheduled refresh 失败后 cooldown 结束的下一 tick 走 STEADY**：失败 → score 此时已超阈值进入 PROBING；fake-advance 至 cooldown 结束；断言下一 sentinelTick 触发了 `getCopilotToken("scheduled")`（不只是 cacheModels）。验证 `tickFailed: true` 强制压回 STEADY 的死锁防御
+- **fatal 在 cooldown 期间发生时下一 tick 走 cooldown 间隔**：mock cacheModels 抛非 auth fatal；在已有 cooldown 的状态下断言下一 tick 间隔 = cooldownMs（不是 steady 周期）
 - **`sentinelTick` 入口清 `pendingTimeoutHandle`**：tick 进入后立刻断言 `pendingTimeoutHandle === null`，直到 `scheduleNext` 末尾才被赋值
-- **`stop()` 后 inflight 完成**：在 inflight refresh 仍在跑时调 `stop()`，刷新完成走到 `rearmSentinelAfterRefresh` → 因为 `sentinelState=null` 而 early return，不会偷偷重启 loop
+- **`stop()` 后 inflight 完成**：在 inflight refresh 仍在跑时调 `stop()`（generation+=1）→ 刷新 resolve 时 generation 不匹配 → 不写 state、不动 cooldown、不 rearm；测试断言 `state.copilotToken` 保持 stop 前的值
 
 **`copilot-{openai,native,responses,embeddings}.test.ts`**：每个 client 覆盖完整 401 矩阵。
 - 2xx → 不上报信号、不调用 refreshNow
@@ -890,7 +980,10 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
 | token/headers 一致性 | **`config.snapshotAuth()` 原子方法** | 杜绝两次 `state` 读之间发生切换导致 `usedToken` 与 Authorization 分裂 |
 | 信号通道作用 | **仅决定 PROBING 频率档** | 与刷新决策完全解耦，修复 v1 评分硬伤 |
 | 调度容器 | **setTimeout 链 + module-global `pendingTimeoutHandle`；tick 入口清空 handle** | 杜绝 setInterval 重入；保持"handle 仅指向未来 timer"语义 |
-| Tick 内 / 外 refresh 区分 | **`tickInProgress` + `dirtyAfterTick` 标志** | tick 外刷新立即 rearm；tick 内仅打标记，由 tick 末统一 scheduleNext，杜绝双挂起 timer |
+| Tick 内 / 外 refresh 区分 | **`suppressRearm` 细粒度标志（仅哨兵自身 await refreshNow 的同步上下文）+ `dirtyAfterTick`** | tick 外刷新（含哨兵 cacheModels 期间的外部并发 LLM）立即 rearm；只压制哨兵自己等的那次刷新 |
+| 旧 loop 隔离 | **`generation` 模块计数器；`bootstrap`/`teardownInternal` 递增；inflight 完成时校验** | 防止旧 loop 飞行刷新污染新 loop 的 token / cooldown / timer |
+| Fatal 路径 | **走统一 `scheduleNext({tickFailed:true})` + `computeNextDelay`** | cooldown 期间 fatal 不会误把下一 tick 放到 steady 周期 |
+| Scheduled-fail 后 mode 控制 | **`tickFailed: true` 强制 `mode=steady`** | 防止"refresh 失败 → PROBING 接管 → cooldown 结束只 cacheModels 不刷 token"死锁 |
 | 启动入口 | **`bootstrap({ token, refreshInSeconds, timers })` 单一函数；重入时先 teardown** | 消除双入口歧义；重复 init 不产生并行 loop |
 | 模型缓存刷新 | **由哨兵 tick 自然完成** | 删掉 `refreshModelsForToken` 分支 |
 | 重试上限 | **代码层硬编码 1 次** | I-5 显式保证，不依赖运气 |
