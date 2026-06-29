@@ -518,17 +518,27 @@ export interface CopilotXxxConfig {
 
 ```ts
 // packages/proxy/src/lib/api-config.ts —— 新增
+
+// 参数 token 类型放宽为 string | null：
+//   - 保持旧 copilotHeaders(state) 的形为兼容（state.copilotToken 本就是
+//     string | null，wrapper 直接转发不需要额外 guard）；
+//   - 调用方 snapshotAuth 在自己侧的 missing-token guard 之后传入非空 token,
+//     语义不受影响；
+//   - 内部用 String(token ?? "") 兜底，确保不会出现 "Bearer null" 这种字面量
+//     （即使绕过 guard 直接调到这里，最差也是 "Bearer "，仍会被上游 401 拒，
+//     但行为可观察）。
 export function copilotHeadersForToken(
   state: State,
-  token: string,
+  token: string | null,
   vision: boolean = false,
 ): Record<string, string> {
   // 与 copilotHeaders 完全等价的实现，但 Authorization 用传入的 token，
   // 不再读 state.copilotToken。所有其它 header 仍按 state 派生
   // （version / vision / x-request-id 等）。
+  // Authorization: `Bearer ${token ?? ""}`
 }
 
-// 原 copilotHeaders 改成调用 copilotHeadersForToken：
+// 原 copilotHeaders 改成调用 copilotHeadersForToken（行为零变化）：
 export const copilotHeaders = (state: State, vision: boolean = false) =>
   copilotHeadersForToken(state, state.copilotToken, vision)
 ```
@@ -880,10 +890,11 @@ proxy startup:
 let sentinelHandle: SentinelHandle | null = null
 
 export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) => {
-  // ── 先 stop 旧 handle（关键，避免双 loop 并行刷 token）──
-  // 否则若旧 sentinel 正在 scheduled refresh（getCopilotToken in flight），
-  // 这里再 await getCopilotToken() 会并发打第二条 token 请求，违背 I-2。
-  // teardownInternal() 内部递增 generation，旧 inflight 完成时结果被废弃。
+  // ── 先 stop 旧 handle，让"setup-级 getCopilotToken 与旧 sentinel inflight
+  //    短暂并存"的窗口尽量短 ──
+  // I-2 已明确把 setupCopilotToken 重入列为显式例外（见 §2 / §5）。
+  // teardownInternal() 内部递增 generation，旧 inflight 完成时结果被废弃；
+  // 这里再 await getCopilotToken() 是合法的 setup-级请求，不算并发 refresh。
   if (sentinelHandle) {
     sentinelHandle.stop()
     sentinelHandle = null
