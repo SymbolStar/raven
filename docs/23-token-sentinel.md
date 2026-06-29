@@ -181,19 +181,42 @@ let activeTimers: TimerFactory | null = null
 let pendingTimeoutHandle: ReturnType<TimerFactory["setTimeout"]> | null = null
 let sentinelState: SentinelState | null = null
 
+// ── Tick re-entry guard ──
+// tickInProgress 区分"refreshNow 是否在 sentinelTick 同步上下文中被调用"。
+//   - tick 外（LLM 路径 / 测试手动 refreshNow）：完成后立即 clear + rearm。
+//   - tick 内（scheduled / sentinel-401）：只置 dirty 标志，
+//     由 tick 末的 scheduleNext 统一安排——避免在 tick 内 rearm 一次、
+//     tick 末再 schedule 一次，导致双挂起 timer。
+let tickInProgress = false
+let dirtyAfterTick = false
+
 /**
- * 关键：refreshNow 在任何 token 状态变化（成功或失败）后必须 rearm 哨兵 timer，
- * 让本来挂着的下一次 tick 按最新的 currentSteadyIntervalMs() / cooldownRemaining
- * 重新计算。否则：
+ * 关键：refreshNow 在任何 token 状态变化（成功或失败）后必须让哨兵 timer
+ * 按最新的 currentSteadyIntervalMs() / cooldownRemaining 重新计算。
+ *
+ * 否则会出现两类问题：
  *   - LLM 路径刷新成功并改写了 lastRefreshInSeconds，但 steady timer 仍按
  *     bootstrap 时的旧 refresh_in 等下去；
  *   - LLM 路径刷新失败建立了 5s cooldown，但 steady timer 还要再等数分钟才
  *     发现这一事实。
+ *
+ * 但 rearm 时机要分清：
+ *   - 若当前正在 sentinelTick 内（tickInProgress=true），rearm 会与
+ *     tick 末的 scheduleNext 重复发起两次挂起 timer。这种情况只置
+ *     dirtyAfterTick=true；scheduleNext 始终会跑，无需额外动作。
+ *   - 否则（LLM 路径或测试外部调用），立即 clear 当前挂起 handle
+ *     并触发一次 scheduleNext。
  */
 function rearmSentinelAfterRefresh() {
-  if (!sentinelState || !activeTimers || !pendingTimeoutHandle) return
-  activeTimers.clearTimeout(pendingTimeoutHandle)
-  pendingTimeoutHandle = null
+  if (!sentinelState || !activeTimers) return
+  if (tickInProgress) {
+    dirtyAfterTick = true   // 由 tick 末 scheduleNext 收尾
+    return
+  }
+  if (pendingTimeoutHandle) {
+    activeTimers.clearTimeout(pendingTimeoutHandle)
+    pendingTimeoutHandle = null
+  }
   scheduleNext(sentinelState, activeTimers)
 }
 
@@ -301,7 +324,12 @@ export async function refreshNow(
 - **`tokenWasUpdated` 是 caller 的重试开关**：true 才值得重试；false 表示"现在 token 不变，再用一次会得到同样的 401"。
 - **失败冷却全局共享（关键）**：`failureCooldownUntil` / `consecutiveFailures` 是模块级、所有触发源（`llm-401` / `sentinel-401` / `scheduled` / `manual`）共享的退避状态。一次失败后无论谁来调用，在冷却窗口内都直接返回 `ok:false, cooldownMs>0`，**不会**敲上游。这统一了旧 `retryTokenRefresh` 的行为，并堵住"LLM 路径触发失败后下一个请求立即又触发"的风暴。冷却 = `5s, 10s, 20s, …` 上限 `5min`，成功后清零。
 - **`refreshInSeconds` 由 sentinel 模块内部统一记录**：成功刷新时 `noteSuccess(refresh_in)` 写入 `lastRefreshInSeconds`，与触发来源无关。任何 caller 都能通过 `getLastRefreshInSeconds()` 拿到最新值。这避免了"LLM 路径触发刷新成功 → 但 sentinel 调度仍用 bootstrap 时的旧 refresh_in"。哨兵 `scheduleNext` 直接读这个全局值，不依赖 `result.refreshInSeconds` 是否非 null。`RefreshResult.refreshInSeconds` 字段保留只是给 caller 一个观察值，非协议必需。
-- **`refreshNow` 内主动 rearm 哨兵 timer（关键）**：`finally` 块调用 `rearmSentinelAfterRefresh()`，clearTimeout 旧的挂起 tick，让 `scheduleNext` 用最新的 `lastRefreshInSeconds` / `cooldownRemaining` 重算下一次间隔。这是让"LLM 路径触发的刷新结果"立刻反映到哨兵调度的关键——否则：（a）LLM 刷新成功后哨兵仍按旧 `refresh_in` 等，导致下次主动 refresh 太晚；（b）LLM 刷新失败建立了 5s cooldown，但哨兵下一 tick 仍按 25 分钟挂着，cooldown 在后台默默过期，无效。rearm 让 timer 永远与 module-global state 同步。注意：bootstrap 之前调用 `refreshNow`（不应发生）时 `sentinelState` 为 null，rearm 是空操作，安全。
+- **`refreshNow` 内 rearm 哨兵 timer，分内外两条路径（关键）**：`finally` 调 `rearmSentinelAfterRefresh()`：
+  - **tick 外调用**（LLM 路径 / 手动 / 测试）：立刻 clear 当前 `pendingTimeoutHandle` 并跑 `scheduleNext`，把哨兵 timer 按最新 `lastRefreshInSeconds` / `cooldownRemaining` 重排。**这是后台失败后无需 LLM 唤醒就自动恢复的机制**。
+  - **tick 内调用**（scheduled / sentinel-401，因为 `sentinelTick` 同步上下文中 await `refreshNow`）：仅置 `dirtyAfterTick=true` 标志，由 tick 末的 `scheduleNext` 统一收尾。这避免了"tick 内 rearm 一次、tick 末 scheduleNext 又一次"导致双挂起 timer。
+  - 用 `tickInProgress` 模块标志区分；二者共享同一个 single-flight + cooldown 状态，无竞态。
+- **`sentinelTick` 入口清 `pendingTimeoutHandle`**：timer 已经触发，handle 不再代表"未来挂起"。保持 `pendingTimeoutHandle` 语义为"仅指向未来一次挂起 timer"，让 tick 内的 rearm 路径行为可预测。
+- **`bootstrap` 防重入**：开头检测已有活动 loop 时先 `teardownInternal()` 清旧 timer 再建新。`setupCopilotToken({force})` 重复初始化或测试套件中反复 bootstrap 不会产生并行 loop。
 - **`MIN_REFRESH_INTERVAL_MS = 30s` 是上游访问频次兜底**：与 single-flight 是正交保护。**只在 attemptedToken == 当前 state 时生效**——保证它不会误伤"晚到的尾部请求"。
 - **刷新结果不内嵌 `/models` 验证**：`refreshNow()` 拿到新 token 立刻返回。验证由两层独立机制承担：(1) LLM caller 的"用新 token 重试一次"本身就是一次实际验证；(2) 哨兵下一次 tick 的 `cacheModels()` 是后置的健康复核。把验证耦合进 `refreshNow()` 会阻塞所有等待者，得不偿失。
 
@@ -404,6 +432,21 @@ export interface CopilotXxxConfig {
 
 `snapshotAuth()` 内部实现一次读 `state.copilotToken` 并就地构造 headers，**不再二次访问 state**。这把"token / headers 必须同源"从约定变成接口保证。
 
+**四个 client 的 `SnapshotOptions` 差异（实施时必须保留各自现有 headers 形状）**：
+
+| Client | SnapshotOptions 字段 | snapshotAuth 内部要构造的 headers（在现有 `copilotHeaders` 之上叠加） |
+|---|---|---|
+| `copilot-openai` | `{ enableVision: boolean; isAgentCall: boolean }` | `Authorization: Bearer <token>` + 视觉与 `X-Initiator` 由 options 决定（原 `getHeaders(enableVision)` + `X-Initiator` 拼装位置上移） |
+| `copilot-responses` | `{ enableVision: boolean; isAgentCall: boolean }` | 同 openai |
+| `copilot-native` | `{ anthropicBeta: string \| null; visionRequest: boolean; isAgentCall: boolean }` | `Authorization` + `anthropic-version: 2023-06-01` + 可选 `anthropic-beta` + 可选 `copilot-vision-request` + `X-Initiator`。**与现有 `copilot-native.ts` 内 headers 块完全等价** |
+| `copilot-embeddings` | `{}` 或 `undefined`（无差异化字段） | `Authorization` + 基础 copilot headers（与原 `getHeaders()` 等价） |
+
+**实施约束**：
+
+1. `snapshotAuth(options)` 必须返回**与现有路径完全等价**的 headers——只是把"两步读"合成"一步读"。不允许借此机会增删字段。
+2. `SnapshotOptions` 字段命名应与各 client 内部已有的派生量（`enableVision` / `isAgentCall` / `anthropicBeta` / `visionRequest`）一致，避免引入新概念。
+3. `getHeaders()` / `getToken()` 保留：现有非 401 的同步路径（如 dashboard 查询）仍可继续用，渐进迁移。
+
 默认 factory（`defaultCopilotXxxConfig`）一行实现，单测可以注入 mock 来模拟"两次读取之间 token 变化"的竞态场景。
 
 **为什么 `usedToken` 不直接从 sentinel 模块读**：
@@ -454,6 +497,13 @@ function currentSteadyIntervalMs(): number {
 }
 
 async function sentinelTick(s: SentinelState, timers: TimerFactory) {
+  // 进入 tick 即清空 pendingTimeoutHandle —— 该 handle 已经触发，
+  // 不再代表"未来挂起 tick"。保持变量语义为"只保存未来 timer"。
+  pendingTimeoutHandle = null
+
+  tickInProgress = true
+  dirtyAfterTick = false
+
   try {
     const inCooldown = getRefreshCooldownRemaining() > 0
 
@@ -466,8 +516,9 @@ async function sentinelTick(s: SentinelState, timers: TimerFactory) {
           error: String(result.error),
           cooldownMs: result.cooldownMs,
         })
-        // 失败已写入全局 cooldown；refreshNow 的 finally 已 rearm 下一 tick。
-        // 本 tick 直接结束，不再访问 /models（防止旧 token 401 再触发一轮无用刷新尝试）。
+        // 失败已写入全局 cooldown。本 tick 直接走 scheduleNext，按 cooldown
+        // 间隔安排下一 tick；不访问 /models（防止旧 token 401 再触发一轮无用尝试）。
+        scheduleNext(s, timers)
         return
       }
     }
@@ -483,7 +534,7 @@ async function sentinelTick(s: SentinelState, timers: TimerFactory) {
       } catch (e) {
         if (isAuthError(e)) {
           await refreshNow("sentinel-401")
-          // refreshNow 内部会 rearm；本 tick 不递归 cacheModels
+          // tick 内的 refreshNow 只置 dirtyAfterTick；本 tick 不递归 cacheModels。
         } else {
           logger.warn("sentinel /models failed (non-auth)", { error: String(e) })
         }
@@ -500,6 +551,12 @@ async function sentinelTick(s: SentinelState, timers: TimerFactory) {
       () => sentinelTick(s, timers),
       currentSteadyIntervalMs(),
     )
+  } finally {
+    tickInProgress = false
+    // dirtyAfterTick 不需要在这里 act：scheduleNext / fatal 分支已经
+    // 在 tick 结束前安排好下一次 timer，dirty 标志只是用来防止
+    // tick 内的 refreshNow 重复 schedule。tick 退出后直接丢弃即可。
+    dirtyAfterTick = false
   }
 }
 
@@ -542,6 +599,10 @@ function scheduleNext(s: SentinelState, timers: TimerFactory) {
  *
  * 替代旧设计里 bootstrap() + startTokenSentinel() 两个函数的组合。
  * 返回 stop() 句柄给测试与未来 shutdown 用。
+ *
+ * 重入语义：bootstrap 调用时若已经存在活动 loop（setupCopilotToken 被
+ * 重复调用 / 测试重复 init），先内部 stop 掉旧 loop 再新建。这避免
+ * 双 timer 并行，且让 setupCopilotToken({ force: true }) 行为可预测。
  */
 export interface BootstrapOptions {
   token: string
@@ -553,8 +614,27 @@ export interface SentinelHandle {
   stop(): void
 }
 
+function teardownInternal() {
+  if (activeTimers && pendingTimeoutHandle) {
+    activeTimers.clearTimeout(pendingTimeoutHandle)
+  }
+  pendingTimeoutHandle = null
+  sentinelState = null
+  activeTimers = null
+  // tickInProgress 是同步标志，不持久跨调用——不需要这里清。
+  // 若有 inflight 刷新仍在跑，那一轮会 finally 中调 rearm，
+  // 但因为 sentinelState=null，rearm 会 early return（见
+  // rearmSentinelAfterRefresh 第一行 guard）。
+}
+
 export function bootstrap(opts: BootstrapOptions): SentinelHandle {
   const timers = opts.timers ?? defaultTimers
+
+  // 防重入：如果已经有活动 loop，先清掉
+  if (sentinelState || pendingTimeoutHandle) {
+    logger.warn("sentinel.bootstrap called while loop is active; resetting")
+    teardownInternal()
+  }
 
   state.copilotToken = opts.token          // I-1 的唯一写入点之一
   noteSuccess(opts.refreshInSeconds)       // 初始化 lastSuccessAt / lastRefreshInSeconds
@@ -571,12 +651,7 @@ export function bootstrap(opts: BootstrapOptions): SentinelHandle {
   )
 
   return {
-    stop: () => {
-      if (pendingTimeoutHandle) timers.clearTimeout(pendingTimeoutHandle)
-      pendingTimeoutHandle = null
-      sentinelState = null
-      activeTimers = null
-    },
+    stop: teardownInternal,
   }
 }
 ```
@@ -679,7 +754,7 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
 - **在 `CopilotXxxConfig` 上引入 `snapshotAuth()` 原子方法**（见 §9）；保留 `getToken()` / `getHeaders()` 给现有非 401 路径。
 - 四个 upstream client 加 401 → `await sentinel.refreshNow("llm-401", usedToken)` + 单次重试，token 与 headers 通过 `snapshotAuth()` 同源读取。
 - 哨兵接入 `tokenSignal.shouldProbeNow()` → PROBING 周期切换。
-- 单测：信号累积、衰减、阈值边界；LLM 客户端 401 重试矩阵（文案命中/不命中 × 刷新成功/失败/冷却中 × tokenWasUpdated true/false × 重试 ok/fail）；`snapshotAuth` 原子读出 token 与 headers 中的 Authorization 一致。
+- 单测：信号累积、衰减、阈值边界；LLM 客户端 401 重试矩阵（文案命中/不命中 × 刷新成功/失败/冷却中 × tokenWasUpdated true/false × 重试 ok/fail）；`snapshotAuth` 原子读出 token 与 headers 中的 Authorization 一致；**`snapshotAuth` 输出的 headers 与重构前 fixture 完全等价**（每个 client 的特征 header：openai/responses 的 `X-Initiator`+vision、native 的 `anthropic-*` 系列、embeddings 的 baseline）。
 - 集测（L2）：并发 N 个 LLM 401 → 上游 `/copilot_internal/v2/token` 只被调用 1 次；LLM 失败时 cooldown 生效，后续请求不再敲上游。
 - **本阶段完整覆盖 PR #129 的体验目标**。
 
@@ -729,6 +804,10 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
 - **`refreshNow` 成功返回 `refreshInSeconds` 等于上游 `refresh_in`**
 - **`refreshNow` 失败 → inflight 被清空**：失败后下一次调用能正常发起新刷新（前提：cooldown 已过或冷却期为 0）
 - **bootstrap 单一入口**：调用后 `state.copilotToken` 被写入、`getLastRefreshInSeconds()` 等于首个 refresh_in、loop 启动、返回的 `stop()` 能干净取消挂起 tick
+- **bootstrap 防重入**：连续两次 `bootstrap()` → 第一次的挂起 tick 被 clear，只剩第二次的；断言 `setTimeout` 实际净增量 = 1，`clearTimeout` 被调用 1 次
+- **tick 内 refresh 不产生双 timer**：让 sentinelTick 内的 scheduled refresh 成功 → fake-advance 时间，断言下一次 sentinelTick 只触发 **1 次**（不是 2 次）；`setTimeout` 在 tick 范围内净增量 = 1
+- **`sentinelTick` 入口清 `pendingTimeoutHandle`**：tick 进入后立刻断言 `pendingTimeoutHandle === null`，直到 `scheduleNext` 末尾才被赋值
+- **`stop()` 后 inflight 完成**：在 inflight refresh 仍在跑时调 `stop()`，刷新完成走到 `rearmSentinelAfterRefresh` → 因为 `sentinelState=null` 而 early return，不会偷偷重启 loop
 
 **`copilot-{openai,native,responses,embeddings}.test.ts`**：每个 client 覆盖完整 401 矩阵。
 - 2xx → 不上报信号、不调用 refreshNow
@@ -740,6 +819,11 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
 - 401 + token-expired + 重试仍 401 → 抛重试响应的 HTTPError、**不再次触发 refresh**（I-5）
 - **并发尾部请求场景**：模拟 A、B 都用旧 token；B 先撞 401 触发 refresh 成功；A 再撞 401 → A 调 `refreshNow(_, oldToken)` 时短路返回 → A 用新 token 重试成功
 - **`snapshotAuth` 原子性**：mock config 让两次 `getToken` 中间换 token 值；断言 `snapshotAuth()` 返回的 `token` 字段与 headers 中 Authorization 一致（不会发生分裂）
+- **`snapshotAuth` 保留原有 fixture headers**：每个 client 的 401 重试测试 + 一个 happy path（2xx）测试，**断言 fetch 实际收到的 headers 与重构前的 fixture 完全等价**：
+  - openai/responses：包含 `X-Initiator` 与必要时的 `copilot-vision-request`
+  - native：包含 `anthropic-version`、必要时的 `anthropic-beta`、`copilot-vision-request`、`X-Initiator`
+  - embeddings：与原 `copilotHeaders(state)` 完全一致
+  - 这层断言保证 §9 引入 `snapshotAuth` 不会为了"原子性"而改坏请求形状
 - 所有 401 路径验证：**不调用 `getCopilotToken`、不写 `state.copilotToken`**（I-1, I-3）
 
 ### 集成测试（L2）
@@ -805,8 +889,9 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
 | `refresh_in` 来源 | **sentinel 模块统一记录（`lastRefreshInSeconds`）+ timer rearm** | 跨触发源传播；新值立即生效，不等下次 tick |
 | token/headers 一致性 | **`config.snapshotAuth()` 原子方法** | 杜绝两次 `state` 读之间发生切换导致 `usedToken` 与 Authorization 分裂 |
 | 信号通道作用 | **仅决定 PROBING 频率档** | 与刷新决策完全解耦，修复 v1 评分硬伤 |
-| 调度容器 | **setTimeout 链 + module-global `pendingTimeoutHandle`** | 杜绝 setInterval 重入；refresh 后主动 rearm；每次从 module-global 重新计算下一间隔 |
-| 启动入口 | **`bootstrap({ token, refreshInSeconds, timers })` 单一函数** | 同时完成写入 + 启动 loop + 返回 `stop`，消除双入口歧义 |
+| 调度容器 | **setTimeout 链 + module-global `pendingTimeoutHandle`；tick 入口清空 handle** | 杜绝 setInterval 重入；保持"handle 仅指向未来 timer"语义 |
+| Tick 内 / 外 refresh 区分 | **`tickInProgress` + `dirtyAfterTick` 标志** | tick 外刷新立即 rearm；tick 内仅打标记，由 tick 末统一 scheduleNext，杜绝双挂起 timer |
+| 启动入口 | **`bootstrap({ token, refreshInSeconds, timers })` 单一函数；重入时先 teardown** | 消除双入口歧义；重复 init 不产生并行 loop |
 | 模型缓存刷新 | **由哨兵 tick 自然完成** | 删掉 `refreshModelsForToken` 分支 |
 | 重试上限 | **代码层硬编码 1 次** | I-5 显式保证，不依赖运气 |
 
