@@ -514,22 +514,60 @@ export interface CopilotXxxConfig {
 
 `snapshotAuth()` 内部实现一次读 `state.copilotToken` 并就地构造 headers，**不再二次访问 state**。这把"token / headers 必须同源"从约定变成接口保证。
 
+**底层 helper 必须新增**：现有 `copilotHeaders(state, vision?)` （`packages/proxy/src/lib/api-config.ts:29`）会在内部直接读 `state.copilotToken` 拼 `Authorization`。如果 `snapshotAuth()` 一边读出 token 一边调用它，仍会发生"读了 token 又被它二次读 state"的分裂。所以方案的硬性要求是：
+
+```ts
+// packages/proxy/src/lib/api-config.ts —— 新增
+export function copilotHeadersForToken(
+  state: State,
+  token: string,
+  vision: boolean = false,
+): Record<string, string> {
+  // 与 copilotHeaders 完全等价的实现，但 Authorization 用传入的 token，
+  // 不再读 state.copilotToken。所有其它 header 仍按 state 派生
+  // （version / vision / x-request-id 等）。
+}
+
+// 原 copilotHeaders 改成调用 copilotHeadersForToken：
+export const copilotHeaders = (state: State, vision: boolean = false) =>
+  copilotHeadersForToken(state, state.copilotToken, vision)
+```
+
+这样：
+- 旧调用方零行为变化（`copilotHeaders(state)` 仍按 state 当前 token 拼）。
+- `snapshotAuth()` 内部用 `copilotHeadersForToken(state, capturedToken, vision)`，杜绝二次读 state。
+- 单测可以验证"传入 token A 后，即使期间换 state.copilotToken = B，返回 headers 中 Authorization 仍是 A"。
+
 **四个 client 的 `SnapshotOptions` 差异（实施时必须保留各自现有 headers 形状）**：
 
-| Client | SnapshotOptions 字段 | snapshotAuth 内部要构造的 headers（在现有 `copilotHeaders` 之上叠加） |
+| Client | SnapshotOptions 字段 | snapshotAuth 内部基于 `copilotHeadersForToken(state, token, vision)` 之上叠加 |
 |---|---|---|
-| `copilot-openai` | `{ enableVision: boolean; isAgentCall: boolean }` | `Authorization: Bearer <token>` + 视觉与 `X-Initiator` 由 options 决定（原 `getHeaders(enableVision)` + `X-Initiator` 拼装位置上移） |
-| `copilot-responses` | `{ enableVision: boolean; isAgentCall: boolean }` | 同 openai |
-| `copilot-native` | `{ anthropicBeta: string \| null; visionRequest: boolean; isAgentCall: boolean }` | `Authorization` + `anthropic-version: 2023-06-01` + 可选 `anthropic-beta` + 可选 `copilot-vision-request` + `X-Initiator`。**与现有 `copilot-native.ts` 内 headers 块完全等价** |
-| `copilot-embeddings` | `{}` 或 `undefined`（无差异化字段） | `Authorization` + 基础 copilot headers（与原 `getHeaders()` 等价） |
+| `copilot-openai` | `{ enableVision: boolean; isAgentCall: boolean }` | + `X-Initiator: agent\|user` |
+| `copilot-responses` | `{ enableVision: boolean; isAgentCall: boolean }` | + `X-Initiator: agent\|user` |
+| `copilot-native` | `{ anthropicBeta: string \| null; visionRequest: boolean; isAgentCall: boolean }` | + `anthropic-version: 2023-06-01` + 可选 `anthropic-beta` + `X-Initiator`（vision header 由 `copilotHeadersForToken` 的 `vision` 参数承担） |
+| `copilot-embeddings` | `{}` 或 `undefined`（无差异化字段） | 直接 = `copilotHeadersForToken(state, token, false)` |
 
 **实施约束**：
 
 1. `snapshotAuth(options)` 必须返回**与现有路径完全等价**的 headers——只是把"两步读"合成"一步读"。不允许借此机会增删字段。
 2. `SnapshotOptions` 字段命名应与各 client 内部已有的派生量（`enableVision` / `isAgentCall` / `anthropicBeta` / `visionRequest`）一致，避免引入新概念。
 3. `getHeaders()` / `getToken()` 保留：现有非 401 的同步路径（如 dashboard 查询）仍可继续用，渐进迁移。
+4. **新增 `copilotHeadersForToken` 是方案前置条件**：阶段 2 实施时必须先合入 `api-config.ts` 的拆分，再做 client 层迁移。
 
-默认 factory（`defaultCopilotXxxConfig`）一行实现，单测可以注入 mock 来模拟"两次读取之间 token 变化"的竞态场景。
+默认 factory（`defaultCopilotXxxConfig`）一行实现：
+
+```ts
+snapshotAuth: (options) => {
+  const token = state.copilotToken    // 唯一一次读
+  return {
+    token,
+    headers: { ...copilotHeadersForToken(state, token, options?.enableVision ?? false),
+               "X-Initiator": options?.isAgentCall ? "agent" : "user" }
+  }
+}
+```
+
+单测可以注入 mock 来模拟"两次读取之间 token 变化"的竞态场景。
 
 **为什么 `usedToken` 不直接从 sentinel 模块读**：
 
@@ -560,6 +598,24 @@ export interface CopilotXxxConfig {
 ---
 
 ## 10. 哨兵主循环（与 §7 结合）
+
+**TimerFactory 接口必须扩展**：现有 `packages/proxy/src/lib/token.ts:23` 的 `TimerFactory` 是 `{ setInterval, clearInterval, setTimeout }`，**缺 `clearTimeout`**。本设计完全弃用 `setInterval` / `clearInterval`，改用 `setTimeout` 链 + `clearTimeout` 主动重排。阶段 1 实施时必须先：
+
+```ts
+// 变更后的 TimerFactory
+export interface TimerFactory {
+  setTimeout: typeof globalThis.setTimeout
+  clearTimeout: typeof globalThis.clearTimeout
+  // setInterval / clearInterval 不再需要——可以从接口移除
+}
+
+const defaultTimers: TimerFactory = {
+  setTimeout: globalThis.setTimeout.bind(globalThis),
+  clearTimeout: globalThis.clearTimeout.bind(globalThis),
+}
+```
+
+测试中的 fake-timer 实现也对应只需 `setTimeout` / `clearTimeout`，不再 mock interval-类 API。
 
 ```ts
 // packages/proxy/src/lib/token-sentinel.ts (草案)
@@ -818,6 +874,15 @@ proxy startup:
 let sentinelHandle: SentinelHandle | null = null
 
 export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) => {
+  // ── 先 stop 旧 handle（关键，避免双 loop 并行刷 token）──
+  // 否则若旧 sentinel 正在 scheduled refresh（getCopilotToken in flight），
+  // 这里再 await getCopilotToken() 会并发打第二条 token 请求，违背 I-2。
+  // teardownInternal() 内部递增 generation，旧 inflight 完成时结果被废弃。
+  if (sentinelHandle) {
+    sentinelHandle.stop()
+    sentinelHandle = null
+  }
+
   const { token, refresh_in } = await getCopilotToken()
   // 单一入口：写入 + 启动 loop 都交给 sentinel.bootstrap
   sentinelHandle = sentinel.bootstrap({ token, refreshInSeconds: refresh_in, timers })
@@ -825,9 +890,16 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
 }
 ```
 
+**关于 I-2 在 setupCopilotToken 重入时的保证**：
+
+- 旧 loop 的 scheduled refresh 可能仍 in flight。`stop()` 仅 clear timer + 递增 generation，**不会**取消已发出的 `getCopilotToken()` HTTP 请求——它会跑完，但 finally 校验 generation 不匹配 → 结果被丢弃。
+- 紧接着 `setupCopilotToken` 自己 await 的 `getCopilotToken()` 是新的、独立的请求。
+- 严格来说瞬时确实有"两条 in-flight token 请求"（旧的将要被废弃 + 新的会被新 bootstrap 采纳），但 **module-level inflight 已被 stop 清零**，外部 `refreshNow()` 调用方不会复用旧 Promise。从"上游访问频次"角度看，这是 setupCopilotToken 重入语义下不可避免的成本——可以接受，因为它只在用户显式 force-refresh 时发生，不会形成风暴。
+- 如果未来需要把"首次/强制刷新也纳入 sentinel single-flight"，需要把 `setupCopilotToken` 改成调一个新的 `sentinel.bootstrapAsync({ timers })` —— 由 sentinel 自己 `refreshNow("manual")` 拿 token 后再启动 loop。本文档暂不引入这层间接，保持现有调用面。
+
 这样 `state.copilotToken` 在整个代码库中只有一个写入文件（`token-sentinel.ts`），I-1 的 grep 验收稳定通过。
 
-**关停**：测试或 shutdown 调用 `sentinelHandle.stop()`——内部清理 `pendingTimeoutHandle` 和 `sentinelState`。无显式 graceful shutdown 协议（与现有 systemd / dev 流程一致）。
+**关停**：测试或 shutdown 调用 `sentinelHandle.stop()`——内部清理 `pendingTimeoutHandle` / `sentinelState` 并递增 generation。无显式 graceful shutdown 协议（与现有 systemd / dev 流程一致）。
 
 ---
 
@@ -871,19 +943,23 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
 
 **阶段 1 — 哨兵骨架（独立 PR）**
 
-- 新增 `packages/proxy/src/lib/token-sentinel.ts`，包含 `refreshNow(reason, attemptedToken?, { fromSentinelTick? })`（含全局 cooldown + generation 校验 + per-call rearm 绑定）+ `noteSuccess/Failure`（含 `forceSteadyAfterCooldown` 跨触发源标志）+ tick loop（STEADY 状态机 + 主动 scheduled refresh + cooldown 期间静默 + 入口消费 `forceSteadyAfterCooldown` + `scheduleNext({tickFailed})` 双层死锁防御，PROBING 留空骨架）+ **单一入口 `bootstrap({ token, refreshInSeconds, timers })`** 返回 `{ stop }` 句柄（含 generation 递增）+ 周期辅助 `getLastRefreshInSeconds` / `getRefreshCooldownRemaining` / `computeNextDelay`。
-- 删除 `scheduleTokenRefresh` / `retryTokenRefresh` / `refreshModelsForToken`；`setupCopilotToken` 改调 `sentinel.bootstrap(...)`，不再直接写 `state.copilotToken`。
+- **TimerFactory 扩展**：现有 `packages/proxy/src/lib/token.ts` 的 `TimerFactory` 改为 `{ setTimeout, clearTimeout }`，删 `setInterval` / `clearInterval`（哨兵不再用）。
+- 新增 `packages/proxy/src/lib/token-signal.ts`，但**只提供 no-op 实现**：`reportAuthFailure` / `decay` 为空函数，`shouldProbeNow` 恒返回 `false`，`readScore` 恒返回 `0`。这是为了让阶段 1 的 sentinel 主循环（已经引用 `tokenSignal.shouldProbeNow / decay`）能稳定编译运行，但 PROBING 路径在阶段 1 永不被触发。完整实现留到阶段 2。
+- 新增 `packages/proxy/src/lib/token-sentinel.ts`，包含 `refreshNow(reason, attemptedToken?, { fromSentinelTick? })`（含全局 cooldown + generation 校验 + per-call rearm 绑定）+ `noteSuccess/Failure`（含 `forceSteadyAfterCooldown` 跨触发源标志）+ tick loop（STEADY 状态机 + 主动 scheduled refresh + cooldown 期间静默 + 入口消费 `forceSteadyAfterCooldown` + `scheduleNext({tickFailed})` 双层死锁防御；调用 no-op tokenSignal）+ **单一入口 `bootstrap({ token, refreshInSeconds, timers })`** 返回 `{ stop }` 句柄（含 generation 递增）+ 周期辅助 `getLastRefreshInSeconds` / `getRefreshCooldownRemaining` / `computeNextDelay`。
+- 删除 `scheduleTokenRefresh` / `retryTokenRefresh` / `refreshModelsForToken`；`setupCopilotToken` 改为**先 stop 旧 sentinelHandle 再** `await getCopilotToken()` 再 `sentinel.bootstrap(...)`（见 §11），不再直接写 `state.copilotToken`。
 - LLM 路径完全不动。
-- 单测：fake timers + mocked fetch，验证 STEADY 周期、**主动 scheduled refresh**、**上游 refresh_in 变化即重排（含 timer rearm）**、**任意触发源失败均进入 module-global cooldown + 设置 forceSteadyAfterCooldown + rearm**、**cooldown 期间完全静默（不刷 token、不打 /models）**、**任意来源失败（scheduled / sentinel-401 / llm-401）后 cooldown 结束的下一 tick 都走 STEADY**、**fatal 路径走统一 scheduleNext（cooldown 期间不误走 steady 周期）**、**bootstrap 重入 / stop 后旧 inflight 走 generation 隔离**、**inflight 复用走 sentinel-owned dirty 路径、新建 inflight 走立即 rearm**、refresh-on-401、单 flight、min-interval、`attemptedToken` 短路、I-4 不死锁、`stop()` 干净取消挂起 tick。
+- 单测：fake timers（`setTimeout` / `clearTimeout` 双 API）+ mocked fetch，验证 STEADY 周期、**主动 scheduled refresh**、**上游 refresh_in 变化即重排（含 timer rearm）**、**任意触发源失败均进入 module-global cooldown + 设置 forceSteadyAfterCooldown + rearm**、**cooldown 期间完全静默（不刷 token、不打 /models）**、**任意来源失败（scheduled / sentinel-401 / llm-401）后 cooldown 结束的下一 tick 都走 STEADY**、**fatal 路径走统一 scheduleNext（cooldown 期间不误走 steady 周期）**、**bootstrap 重入 / stop 后旧 inflight 走 generation 隔离**、**setupCopilotToken 重入先 stop 再 await（不会并发打 token 接口）**、**inflight 复用走 sentinel-owned dirty 路径、新建 inflight 走立即 rearm**、refresh-on-401、单 flight、min-interval、`attemptedToken` 短路、I-4 不死锁、`stop()` 干净取消挂起 tick。
+- **PROBING 相关测试**（信号累积、阈值进入 PROBING、cooldown 优先级压过 PROBING、forceSteadyAfterCooldown 让 PROBING 不接管 cooldown 后的 STEADY 等）**留到阶段 2**——阶段 1 的 no-op tokenSignal 让 `shouldProbeNow` 恒为 false，相关分支自然走 STEADY，不需要专门覆盖。
 - **本阶段不解决用户体验问题**，只把单写者 + scheduled refresh 的语义统一到哨兵。可独立合入。
 
 **阶段 2 — 等待 + 重试 + 信号（独立 PR，恢复 PR #129 的用户体验目标）**
 
-- 新增 `packages/proxy/src/lib/token-signal.ts`。
-- **在 `CopilotXxxConfig` 上引入 `snapshotAuth()` 原子方法**（见 §9）；保留 `getToken()` / `getHeaders()` 给现有非 401 路径。
+- **`copilotHeadersForToken` 拆分**：在 `packages/proxy/src/lib/api-config.ts` 新增 `copilotHeadersForToken(state, token, vision)`，让原 `copilotHeaders` 调用它。这是 `snapshotAuth` 原子读 token 的前置条件（见 §9）。
+- **替换 token-signal.ts 的 no-op 实现为完整版本**：score 累积、decay、阈值判定都接入；保持接口签名不变，所以哨兵 tick 内引用不变。
+- **在 `CopilotXxxConfig` 上引入 `snapshotAuth()` 原子方法**（见 §9），底层调 `copilotHeadersForToken`；保留 `getToken()` / `getHeaders()` 给现有非 401 路径。
 - 四个 upstream client 加 401 → `await sentinel.refreshNow("llm-401", usedToken)` + 单次重试，token 与 headers 通过 `snapshotAuth()` 同源读取。
-- 哨兵接入 `tokenSignal.shouldProbeNow()` → PROBING 周期切换。
-- 单测：信号累积、衰减、阈值边界；LLM 客户端 401 重试矩阵（文案命中/不命中 × 刷新成功/失败/冷却中 × tokenWasUpdated true/false × 重试 ok/fail）；`snapshotAuth` 原子读出 token 与 headers 中的 Authorization 一致；**`snapshotAuth` 输出的 headers 与重构前 fixture 完全等价**（每个 client 的特征 header：openai/responses 的 `X-Initiator`+vision、native 的 `anthropic-*` 系列、embeddings 的 baseline）。
+- **PROBING 路径自然激活**：阶段 1 已写好的 PROBING 分支因为 no-op tokenSignal 永不进入；阶段 2 替换为真实实现后，`shouldProbeNow` 在阈值跨越时返回 true，PROBING 自然启用，无需新增哨兵代码。
+- 单测：信号累积、衰减、阈值边界；**PROBING 状态机**（信号阈值进入 PROBING、N tick 内无新信号回 STEADY、cooldown 优先级压过 PROBING、forceSteadyAfterCooldown 让 PROBING 不接管 cooldown 后的 STEADY、score 正好等于阈值进入 PROBING 的 decay 顺序断言）；LLM 客户端 401 重试矩阵（文案命中/不命中 × 刷新成功/失败/冷却中 × tokenWasUpdated true/false × 重试 ok/fail）；`snapshotAuth` 原子读出 token 与 headers 中的 Authorization 一致；**`snapshotAuth` 输出的 headers 与重构前 fixture 完全等价**（每个 client 的特征 header：openai/responses 的 `X-Initiator`+vision、native 的 `anthropic-*` 系列、embeddings 的 baseline）。
 - 集测（L2）：并发 N 个 LLM 401 → 上游 `/copilot_internal/v2/token` 只被调用 1 次；LLM 失败时 cooldown 生效，后续请求不再敲上游。
 - **本阶段完整覆盖 PR #129 的体验目标**。
 
@@ -941,7 +1017,7 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
 - **外部 LLM 在 inflight 已结束时建立新 inflight 走立即 rearm**：哨兵 scheduled refresh 已完成（inflight=null）；外部 LLM 调 `refreshNow("llm-401")` → 建立非 sentinel-owned inflight；resolve 后断言 `clearTimeout` 被立即调用 + 新 `pendingTimeoutHandle` 已建立
 - **LLM 失败后 cooldown 结束的下一 tick 走 STEADY**：手动注入 score 触发 PROBING；调 `refreshNow("llm-401")` 让 `getCopilotToken` reject；fake-advance 至 cooldown 结束；断言下一 sentinelTick 触发了 `getCopilotToken("scheduled")`（不只是 cacheModels）。验证 `forceSteadyAfterCooldown` 对 LLM 触发源也生效
 - **scheduled refresh 失败后 cooldown 结束的下一 tick 走 STEADY**：失败 → score 此时已超阈值进入 PROBING；fake-advance 至 cooldown 结束；断言下一 sentinelTick 触发了 `getCopilotToken("scheduled")`（不只是 cacheModels）。验证 `tickFailed: true` + `forceSteadyAfterCooldown` 双层死锁防御
-- **fatal 在 cooldown 期间发生时下一 tick 走 cooldown 间隔**：mock cacheModels 抛非 auth fatal；在已有 cooldown 的状态下断言下一 tick 间隔 = cooldownMs（不是 steady 周期）
+- **fatal 在 cooldown 期间发生时下一 tick 走 cooldown 间隔**：注入一个让外层 catch 真正触发的 fatal——例如 mock `timers.setTimeout` 在 `scheduleNext` 中首次调用抛错（注意 `cacheModels` 异常会被内层 catch 吞掉，不会到达外层），或 mock `tokenSignal.decay` 抛错；在已有 cooldown 的状态下断言外层 catch 的 `scheduleNext({tickFailed:true})` 安排的下一 tick 间隔 = cooldownMs（不是 steady 周期）
 - **`sentinelTick` 入口清 `pendingTimeoutHandle`**：tick 进入后立刻断言 `pendingTimeoutHandle === null`，直到 `scheduleNext` 末尾才被赋值
 - **`stop()` 后 inflight 完成**：在 inflight refresh 仍在跑时调 `stop()`（generation+=1）→ 刷新 resolve 时 generation 不匹配 → 不写 state、不动 cooldown、不 rearm；测试断言 `state.copilotToken` 保持 stop 前的值
 
@@ -970,10 +1046,13 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
   - 所有 LLM 请求都用新 token 重试成功
   - `state.copilotToken` 最终为新值
 
-### 不再需要的测试
+### 旧实现下不再需要的测试
 
-- "on-demand refresh + retry 的所有矩阵组合"——契约不存在了，由 `refreshNow` 集中保证。
-- "single-flight 并发去重"——单写者结构 + module-level inflight 让它自动成立。
+本节澄清：**不是不再测 401 重试**，而是不再测**旧分散实现**里的若干场景——刷新职责集中化后，那些场景的覆盖点变了。
+
+- **不再需要**：旧"在每个 upstream client 内 wrap fetch、自己做 token 刷新 + 重试"实现下的 retry 矩阵。哪些 client 各自如何刷新 / 各自如何 single-flight，已经不存在——刷新只由 sentinel 跑。
+- **不再需要**：各 client 各自的 single-flight 并发去重测试——module-level inflight + sentinel 单写者天然成立，由 `token-sentinel.test.ts` 集中验证一次即可。
+- **仍然需要**（在阶段 2 client 测试矩阵中保留）：client 层"401 → await refreshNow → 至多重试一次"的完整矩阵。这是新设计下 LLM 路径自己的契约，与旧实现的散点 retry 是不同的覆盖点。
 
 ---
 
