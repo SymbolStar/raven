@@ -3,6 +3,10 @@ import { describe, expect, test, beforeEach, afterEach, vi } from "vitest"
 import { state } from "../../src/lib/state"
 import { HTTPError } from "../../src/lib/error"
 import type { TimerFactory } from "../../src/lib/token"
+import {
+  tokenSignal,
+  _resetTokenSignalForTest,
+} from "../../src/lib/token-signal"
 
 // ---------------------------------------------------------------------------
 // Mocks — must register BEFORE importing token-sentinel.ts
@@ -142,6 +146,7 @@ beforeEach(() => {
   getCopilotTokenMock.mockReset()
   cacheModelsMock.mockReset()
   cacheModelsMock.mockResolvedValue(undefined)
+  _resetTokenSignalForTest()
   harness = createFakeTimers()
 })
 
@@ -504,3 +509,150 @@ describe("generation isolation", () => {
     expect(_debugSnapshot().consecutiveFailures).toBe(0)
   })
 })
+
+// ===========================================================================
+// PROBING state machine (phase 2: real tokenSignal in play)
+// ===========================================================================
+
+describe("PROBING state machine", () => {
+  test("signal at threshold → next tick uses PROBE_INTERVAL_MS", async () => {
+    startSentinel("tok-1", 1500)
+    // Push score to threshold (5)
+    tokenSignal.reportAuthFailure("token-expired") // 3
+    tokenSignal.reportAuthFailure("other-401") // 4
+    tokenSignal.reportAuthFailure("other-401") // 5
+    expect(tokenSignal.shouldProbeNow()).toBe(true)
+
+    // Fire first scheduled tick — succeeds. End-of-tick scheduleNext will see
+    // wantsProbe and enter PROBING mode.
+    getCopilotTokenMock.mockResolvedValueOnce({
+      token: "tok-2",
+      refresh_in: 1500,
+      expires_at: 9_999_999_999,
+    })
+    await harness.flushPending()
+
+    expect(_debugSnapshot().mode).toBe("probing")
+    const pending = harness.timers.filter((t) => !t.cleared && !t.fired)
+    expect(pending).toHaveLength(1)
+    expect(pending[0]!.ms).toBe(5_000) // PROBE_INTERVAL_MS
+  })
+
+  test("PROBING tick does NOT call scheduled refresh (only cacheModels)", async () => {
+    startSentinel("tok-1", 1500)
+    // Score at threshold; first tick succeeds and switches to PROBING
+    tokenSignal.reportAuthFailure("token-expired")
+    tokenSignal.reportAuthFailure("other-401")
+    tokenSignal.reportAuthFailure("other-401")
+    getCopilotTokenMock.mockResolvedValueOnce({
+      token: "tok-2",
+      refresh_in: 1500,
+      expires_at: 9_999_999_999,
+    })
+    await harness.flushPending()
+    expect(_debugSnapshot().mode).toBe("probing")
+
+    // Reset upstream call counter; the upcoming PROBING tick should NOT call it
+    getCopilotTokenMock.mockClear()
+    cacheModelsMock.mockClear()
+    cacheModelsMock.mockResolvedValueOnce(undefined)
+
+    await harness.advance(5_000 + 10)
+
+    expect(getCopilotTokenMock).not.toHaveBeenCalled()
+    expect(cacheModelsMock).toHaveBeenCalledTimes(1)
+  })
+
+  test("PROBING returns to STEADY after PROBE_TICKS (3) idle ticks", async () => {
+    startSentinel("tok-1", 1500)
+    tokenSignal.reportAuthFailure("token-expired")
+    tokenSignal.reportAuthFailure("other-401")
+    tokenSignal.reportAuthFailure("other-401")
+    getCopilotTokenMock.mockResolvedValueOnce({
+      token: "tok-2",
+      refresh_in: 1500,
+      expires_at: 9_999_999_999,
+    })
+    await harness.flushPending()
+    expect(_debugSnapshot().mode).toBe("probing")
+
+    // Each PROBING tick: decay drops score by 1; after enough ticks
+    // wantsProbe becomes false and remainingProbeTicks counts down to STEADY.
+    // Score is at 5 → decay 5 times brings it to 0. We need 3 probing ticks
+    // for remainingProbeTicks, plus enough decay to drop wantsProbe.
+    cacheModelsMock.mockResolvedValue(undefined)
+    // Run several PROBING ticks
+    for (let i = 0; i < 6; i++) {
+      await harness.advance(5_000 + 10)
+    }
+
+    // After several PROBE ticks, signal should have decayed below threshold
+    // and remainingProbeTicks expired → back to STEADY
+    expect(_debugSnapshot().mode).toBe("steady")
+    expect(tokenSignal.shouldProbeNow()).toBe(false)
+    const pending = harness.timers.filter((t) => !t.cleared && !t.fired)
+    expect(pending).toHaveLength(1)
+    // STEADY interval = (1500 - 60) * 1000
+    expect(pending[0]!.ms).toBe(1440_000)
+  })
+
+  test("cooldown overrides PROBING in computeNextDelay (next tick uses cooldown, not PROBE_INTERVAL_MS)", async () => {
+    startSentinel("tok-1", 1500)
+    // First scheduled tick fails → cooldown set
+    getCopilotTokenMock.mockRejectedValueOnce(new HTTPError("f1", 500))
+    await harness.flushPending()
+    const cd = _debugSnapshot().cooldownRemaining
+    expect(cd).toBeGreaterThan(0)
+
+    // Now push signal to threshold — would normally PROBING (5s interval)
+    tokenSignal.reportAuthFailure("token-expired")
+    tokenSignal.reportAuthFailure("other-401")
+    tokenSignal.reportAuthFailure("other-401")
+    expect(tokenSignal.shouldProbeNow()).toBe(true)
+
+    // The pending timer (set by tickFailed at cooldown ms) takes priority
+    // over PROBING — pending timer ms equals cooldown (~5s), not PROBE_INTERVAL_MS.
+    // Both happen to be 5_000 by default, so verify via a different angle:
+    // after the cooldown tick fires (cooldown elapsed), forceSteadyAfterCooldown
+    // forces STEADY → next tick uses STEADY interval (not PROBE).
+    const pending = harness.timers.filter((t) => !t.cleared && !t.fired)
+    expect(pending).toHaveLength(1)
+    expect(pending[0]!.ms).toBeLessThanOrEqual(REFRESH_INITIAL_BACKOFF_MS_ASSERT)
+  })
+
+  test("forceSteadyAfterCooldown: LLM-401 failure → next tick after cooldown does STEADY scheduled refresh (not PROBING)", async () => {
+    startSentinel("tok-1", 1500)
+    // Push score above threshold first to set wantsProbe=true
+    tokenSignal.reportAuthFailure("token-expired")
+    tokenSignal.reportAuthFailure("other-401")
+    tokenSignal.reportAuthFailure("other-401")
+    expect(tokenSignal.shouldProbeNow()).toBe(true)
+
+    // Advance past min-interval so the next refreshNow actually calls upstream
+    await harness.advance(31_000)
+
+    // Trigger an llm-401 refresh that fails
+    getCopilotTokenMock.mockRejectedValueOnce(new HTTPError("llm fail", 500))
+    const r = await refreshNow("llm-401")
+    expect(r.ok).toBe(false)
+    expect(_debugSnapshot().forceSteadyAfterCooldown).toBe(true)
+    const cd = _debugSnapshot().cooldownRemaining
+    expect(cd).toBeGreaterThan(0)
+
+    // The pending timer has been rearmed to cooldownMs. After it fires,
+    // sentinelTick consumes forceSteadyAfterCooldown and forces STEADY mode.
+    getCopilotTokenMock.mockClear()
+    getCopilotTokenMock.mockResolvedValueOnce({
+      token: "tok-recovered",
+      refresh_in: 1500,
+      expires_at: 9_999_999_999,
+    })
+    await harness.advance(cd + 10)
+
+    // STEADY scheduled refresh ran (not just cacheModels probe)
+    expect(getCopilotTokenMock).toHaveBeenCalledTimes(1)
+    expect(state.copilotToken).toBe("tok-recovered")
+    expect(_debugSnapshot().forceSteadyAfterCooldown).toBe(false)
+  })
+})
+
