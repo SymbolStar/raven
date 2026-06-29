@@ -165,10 +165,43 @@ export type RefreshReason = "llm-401" | "sentinel-401" | "scheduled" | "manual"
 
 export type RefreshResult =
   | { ok: true;  tokenWasUpdated: boolean; refreshInSeconds: number | null }
-  | { ok: false; error: unknown }
+  | { ok: false; error: unknown; cooldownMs: number }   // cooldownMs = 0 表示无冷却
 
+// ── module-global state（哨兵唯一持有） ──
 let inflight: Promise<RefreshResult> | null = null
 let lastSuccessAt = 0
+let lastRefreshInSeconds: number | null = null      // 上游最近一次返回值
+
+// ── 失败冷却（module-global，所有触发源共享） ──
+let failureCooldownUntil = 0
+let consecutiveFailures = 0
+
+function noteFailure(): number {
+  consecutiveFailures += 1
+  const backoff = Math.min(
+    REFRESH_INITIAL_BACKOFF_MS * Math.pow(2, consecutiveFailures - 1),
+    REFRESH_MAX_BACKOFF_MS,
+  )
+  failureCooldownUntil = Date.now() + backoff
+  return backoff
+}
+
+function noteSuccess(refreshInSeconds: number) {
+  consecutiveFailures = 0
+  failureCooldownUntil = 0
+  lastSuccessAt = Date.now()
+  lastRefreshInSeconds = refreshInSeconds
+}
+
+/** 哨兵调度查询用：仍在冷却中且还要多久 */
+export function getRefreshCooldownRemaining(): number {
+  return Math.max(0, failureCooldownUntil - Date.now())
+}
+
+/** 哨兵调度查询用：上游最近一次成功的 refresh_in */
+export function getLastRefreshInSeconds(): number | null {
+  return lastRefreshInSeconds
+}
 
 /**
  * 请求哨兵刷新 token。
@@ -193,9 +226,17 @@ export async function refreshNow(
   // ── 2. single-flight：所有并发调用共享同一个 Promise ──
   if (inflight) return inflight
 
-  // ── 3. min-interval 兜底：成功刷新后 N 秒内不重复访问上游 ──
+  // ── 3. 失败冷却（全局，无论触发源）：拒绝调用、报告剩余冷却 ──
+  //     这阻止了"LLM 路径触发 refreshNow 失败 → 下一个请求立刻又触发"的风暴，
+  //     与 scheduled tick 的退避语义统一。
+  const cooldownLeft = getRefreshCooldownRemaining()
+  if (cooldownLeft > 0) {
+    return { ok: false, error: new Error("refresh in cooldown"), cooldownMs: cooldownLeft }
+  }
+
+  // ── 4. min-interval 兜底：成功刷新后 N 秒内不重复访问上游 ──
   //     只有当 caller 用的 token 仍是当前 state.copilotToken 时才生效
-  //    （上面 #1 已经覆盖了"caller 用的是旧 token"的情形）。
+  //    （步骤 1 已经覆盖了"caller 用的是旧 token"的情形）。
   const sinceLast = Date.now() - lastSuccessAt
   if (sinceLast < MIN_REFRESH_INTERVAL_MS && lastSuccessAt > 0) {
     return { ok: true, tokenWasUpdated: false, refreshInSeconds: null }
@@ -206,15 +247,21 @@ export async function refreshNow(
       const oldToken = state.copilotToken
       const { token, refresh_in } = await getCopilotToken()
       state.copilotToken = token       // I-1 的唯一写入点
-      lastSuccessAt = Date.now()
+      noteSuccess(refresh_in)
       return {
         ok: true,
         tokenWasUpdated: token !== oldToken,
         refreshInSeconds: refresh_in,
       }
     } catch (error) {
-      logger.error("refreshNow failed", { reason, error: String(error) })
-      return { ok: false, error }
+      const cooldownMs = noteFailure()
+      logger.error("refreshNow failed", {
+        reason,
+        consecutiveFailures,
+        cooldownMs,
+        error: String(error),
+      })
+      return { ok: false, error, cooldownMs }
     } finally {
       inflight = null
     }
@@ -228,7 +275,8 @@ export async function refreshNow(
 
 - **`attemptedToken` 参数解决并发尾部**：场景是请求 A、B 都拿旧 token 出发，B 先撞 401 触发刷新成功，A 晚一步才撞 401；此时 A 调 `refreshNow(_, oldToken)` → 短路返回 `tokenWasUpdated=true` → A 拿当前 `state.copilotToken`（已是新 token）重试一次。这避免了"min-interval 命中 → 误判没换 token → A 不重试 → 裸 401 泄漏"。
 - **`tokenWasUpdated` 是 caller 的重试开关**：true 才值得重试；false 表示"现在 token 不变，再用一次会得到同样的 401"。
-- **`refreshInSeconds` 让哨兵重排周期**：上游每次返回的 `refresh_in` 都可能变化；哨兵 STEADY tick 拿到 `result.refreshInSeconds` 后据此更新 `steadyIntervalMs`，承担旧实现 `scheduleTokenRefresh` "上游变 refresh_in 就重排"的语义。短路 / min-interval 路径返回 `null` 表示"本次没访问上游、不要据此重排"。
+- **失败冷却全局共享（关键）**：`failureCooldownUntil` / `consecutiveFailures` 是模块级、所有触发源（`llm-401` / `sentinel-401` / `scheduled` / `manual`）共享的退避状态。一次失败后无论谁来调用，在冷却窗口内都直接返回 `ok:false, cooldownMs>0`，**不会**敲上游。这统一了旧 `retryTokenRefresh` 的行为，并堵住"LLM 路径触发失败后下一个请求立即又触发"的风暴。冷却 = `5s, 10s, 20s, …` 上限 `5min`，成功后清零。
+- **`refreshInSeconds` 由 sentinel 模块内部统一记录**：成功刷新时 `noteSuccess(refresh_in)` 写入 `lastRefreshInSeconds`，与触发来源无关。任何 caller 都能通过 `getLastRefreshInSeconds()` 拿到最新值。这避免了"LLM 路径触发刷新成功 → 但 sentinel 调度仍用 bootstrap 时的旧 refresh_in"。哨兵 `scheduleNext` 直接读这个全局值，不依赖 `result.refreshInSeconds` 是否非 null。`RefreshResult.refreshInSeconds` 字段保留只是给 caller 一个观察值，非协议必需。
 - **`MIN_REFRESH_INTERVAL_MS = 30s` 是上游访问频次兜底**：与 single-flight 是正交保护。**只在 attemptedToken == 当前 state 时生效**——保证它不会误伤"晚到的尾部请求"。
 - **刷新结果不内嵌 `/models` 验证**：`refreshNow()` 拿到新 token 立刻返回。验证由两层独立机制承担：(1) LLM caller 的"用新 token 重试一次"本身就是一次实际验证；(2) 哨兵下一次 tick 的 `cacheModels()` 是后置的健康复核。把验证耦合进 `refreshNow()` 会阻塞所有等待者，得不偿失。
 
@@ -271,11 +319,9 @@ export interface TokenSignal {
 
 ```ts
 async function callOnce(): Promise<{ response: Response; usedToken: string }> {
-  // 通过 client 自己的 config 读 token（保留现有 config 注入模型，
-  // 不让 upstream client 直接 import 全局 state）。
-  const usedToken = this.config.getToken()
-  // 用同一轮读出的 token 构建 headers，确保"记录的 token"与"实际发送的 token"一致。
-  const headers = buildHeadersFromToken(this.config, usedToken)
+  // 一次性把 token 和 headers 同源构造，避免 getToken() 与 getHeaders()
+  // 之间发生 token 替换导致两者不一致。
+  const { token: usedToken, headers } = this.config.snapshotAuth()
   const response = await fetch(url, {
     method: "POST",
     headers,
@@ -300,11 +346,11 @@ if (response.status === 401) {
   // 传入 usedToken：让 refreshNow 区分"本 caller 用的 token 是否已被他人换掉"
   const result = await sentinel.refreshNow("llm-401", usedToken)
   if (!result.ok || !result.tokenWasUpdated) {
-    // refresh 失败 / token 没变 → 不重试，抛已读出的 body
+    // refresh 失败 / 冷却中 / token 没变 → 不重试，抛已读出的 body
     throw new HTTPError(errorMessage, 401, body)
   }
 
-  // I-5: 至多重试一次。callOnce 内部再次调 this.config.getToken() 即可拿到新 token。
+  // I-5: 至多重试一次。snapshotAuth() 在新 token 下再次原子读取。
   ;({ response, usedToken } = await callOnce())
 }
 
@@ -315,11 +361,30 @@ if (!response.ok) {
 return response
 ```
 
-**为什么 `usedToken` 从 config 拿而不是 `state.copilotToken`**：
+**Config 接口变更（方案的硬性要求）**：
 
-- 现有 upstream client 通过 `CopilotXxxConfig.getToken()` / `getHeaders()` 接受注入，**不直接 import 全局 state**——这是 §11 单元测试能 mock token 的基础。
-- 直接读 `state.copilotToken` 会破坏这层抽象，让 client 与全局 state 硬耦合，未来"自定义 provider 也走类似流程"时无法复用。
-- `buildHeadersFromToken` 是个示意名字；实际实现可能是 `this.config.getHeaders()`（如果 config 内部已基于自身 token state 构建 headers），或者 `{...this.config.getHeaders(...), Authorization: \`Bearer ${usedToken}\`}`。关键是**这一轮读出的 token 同时进 headers 和返回值 usedToken**，二者一致。
+现有 `CopilotXxxConfig` 暴露 `getToken()` 和 `getHeaders()` 两个独立方法；如果 caller 先 `getToken()` 再 `getHeaders()`，中间 `state.copilotToken` 被哨兵换掉，`usedToken` 与 headers 里实际的 `Authorization` 不一致——`refreshNow` 的 `attemptedToken` 短路逻辑会被错误数据污染。
+
+方案要求在 `CopilotXxxConfig` 上新增一个原子方法：
+
+```ts
+export interface CopilotXxxConfig {
+  // 原有方法保留，给现有非 401 路径继续用
+  getToken(): string
+  getHeaders(...): Record<string, string>
+  // ── 新增：一次性快照本次请求要用的 token 和基于它的 headers ──
+  snapshotAuth(options?: SnapshotOptions): { token: string; headers: Record<string, string> }
+}
+```
+
+`snapshotAuth()` 内部实现一次读 `state.copilotToken` 并就地构造 headers，**不再二次访问 state**。这把"token / headers 必须同源"从约定变成接口保证。
+
+默认 factory（`defaultCopilotXxxConfig`）一行实现，单测可以注入 mock 来模拟"两次读取之间 token 变化"的竞态场景。
+
+**为什么 `usedToken` 不直接从 sentinel 模块读**：
+
+- 现有 upstream client 通过 `CopilotXxxConfig` 接受注入，**不直接 import 全局 state**——这是 §11 单元测试能 mock token 的基础。
+- 直接读 `state.copilotToken` 会破坏这层抽象，让 client 与全局 state 硬耦合。`snapshotAuth()` 在保留注入边界的同时拿到原子性保证。
 
 **严格做且只做**：
 
@@ -352,50 +417,52 @@ return response
 interface SentinelState {
   mode: "steady" | "probing"
   remainingProbeTicks: number
-  steadyIntervalMs: number              // 来自上游最近一次 refresh_in
-  scheduledBackoffMs: number            // 0 表示无退避；>0 表示下一次 STEADY tick 用它
+  /** 当前一次 STEADY 周期是否处于 refresh 失败状态（已委托给全局冷却管理） */
+  scheduledRefreshFailedThisTick: boolean
 }
 
 function intervalFromRefreshIn(refreshInSeconds: number): number {
   return Math.max((refreshInSeconds - 60) * 1000, MIN_REFRESH_MS)
 }
 
+function currentSteadyIntervalMs(): number {
+  const r = getLastRefreshInSeconds()
+  return r != null ? intervalFromRefreshIn(r) : DEFAULT_STEADY_INTERVAL_MS
+}
+
 async function sentinelTick(s: SentinelState, timers: TimerFactory) {
   try {
-    // ── STEADY: 主动 scheduled refresh + 闭环验证 ──
-    // ── PROBING: 仅 cacheModels 探活，不主动 refresh ──
+    s.scheduledRefreshFailedThisTick = false
+
+    // ── STEADY: 主动 scheduled refresh ──
+    // ── PROBING: 不主动 refresh ──
     if (s.mode === "steady") {
-      // 主动换 token（承担旧 scheduleTokenRefresh 的职责）
       const result = await refreshNow("scheduled")
-      if (result.ok) {
-        s.scheduledBackoffMs = 0
-        // 上游每次返回的 refresh_in 都可能变化，按新值重排 STEADY 周期
-        if (result.refreshInSeconds != null) {
-          s.steadyIntervalMs = intervalFromRefreshIn(result.refreshInSeconds)
-        }
-      } else {
-        // 旧 retryTokenRefresh 的指数退避语义：失败时下一次 tick 用 backoff
-        s.scheduledBackoffMs = s.scheduledBackoffMs === 0
-          ? REFRESH_INITIAL_BACKOFF_MS
-          : Math.min(s.scheduledBackoffMs * 2, REFRESH_MAX_BACKOFF_MS)
+      if (!result.ok) {
+        s.scheduledRefreshFailedThisTick = true
         logger.warn("scheduled refresh failed in steady tick", {
           error: String(result.error),
-          retryInMs: s.scheduledBackoffMs,
+          cooldownMs: result.cooldownMs,
         })
-        // refresh 失败也继续 cacheModels 一次（旧 token 可能仍有效）；
-        // 不行就交给下一 tick 用新的 backoff 再来。
+        // 失败已写入全局 cooldown；下一次 tick 间隔由 scheduleNext 读 cooldown 计算。
       }
     }
 
-    // 闭环验证 / 探活
-    try {
-      await cacheModels()
-    } catch (e) {
-      if (isAuthError(e)) {
-        await refreshNow("sentinel-401")
-        // 下一次 tick 会再 cacheModels 一次；本 tick 不递归
-      } else {
-        logger.warn("sentinel /models failed (non-auth)", { error: String(e) })
+    // ── 闭环验证 / 探活 ──
+    // 若本 tick 的 scheduled refresh 刚刚失败，则跳过 cacheModels：
+    // (1) 大概率仍会 401，再次触发 refreshNow 会立即命中全局 cooldown 返回 ok:false，
+    //     虽然不会真的敲上游（cooldown 已生效），但徒增噪音；
+    // (2) 等同步等 cooldown 过去再一并验证更干净——下一 tick 重排。
+    if (!s.scheduledRefreshFailedThisTick) {
+      try {
+        await cacheModels()
+      } catch (e) {
+        if (isAuthError(e)) {
+          await refreshNow("sentinel-401")
+          // 下一次 tick 会再 cacheModels 一次；本 tick 不递归
+        } else {
+          logger.warn("sentinel /models failed (non-auth)", { error: String(e) })
+        }
       }
     }
 
@@ -405,7 +472,7 @@ async function sentinelTick(s: SentinelState, timers: TimerFactory) {
   } catch (fatal) {
     // I-4: 任何意外异常都不让 loop 死
     logger.error("sentinel tick fatal", { error: String(fatal) })
-    timers.setTimeout(() => sentinelTick(s, timers), s.steadyIntervalMs)
+    timers.setTimeout(() => sentinelTick(s, timers), currentSteadyIntervalMs())
   }
 }
 
@@ -422,14 +489,14 @@ function scheduleNext(s: SentinelState, timers: TimerFactory) {
     }
   }
 
-  // STEADY 周期优先使用 scheduledBackoffMs（若 >0）
+  // 优先级：PROBING > 失败冷却 > STEADY 周期
+  // 周期值都来自 module-global state，不再持有 SentinelState 局部副本。
   let nextMs: number
   if (s.mode === "probing") {
     nextMs = PROBE_INTERVAL_MS
-  } else if (s.scheduledBackoffMs > 0) {
-    nextMs = s.scheduledBackoffMs
   } else {
-    nextMs = s.steadyIntervalMs
+    const cooldown = getRefreshCooldownRemaining()
+    nextMs = cooldown > 0 ? cooldown : currentSteadyIntervalMs()
   }
   timers.setTimeout(() => sentinelTick(s, timers), nextMs)
 }
@@ -440,20 +507,18 @@ function scheduleNext(s: SentinelState, timers: TimerFactory) {
  */
 export function bootstrap(initialToken: string, refreshInSeconds: number) {
   state.copilotToken = initialToken      // I-1 的唯一写入点之一
-  lastSuccessAt = Date.now()
-  const steadyIntervalMs = intervalFromRefreshIn(refreshInSeconds)
+  noteSuccess(refreshInSeconds)          // 同时初始化 lastSuccessAt / lastRefreshInSeconds
   // ... 启动 loop（见 startTokenSentinel）
 }
 
-export function startTokenSentinel(opts: { steadyIntervalMs: number; timers?: TimerFactory }) {
+export function startTokenSentinel(opts: { timers?: TimerFactory }) {
   const s: SentinelState = {
     mode: "steady",
     remainingProbeTicks: 0,
-    steadyIntervalMs: opts.steadyIntervalMs,
-    scheduledBackoffMs: 0,
+    scheduledRefreshFailedThisTick: false,
   }
   const timers = opts.timers ?? defaultTimers
-  timers.setTimeout(() => sentinelTick(s, timers), s.steadyIntervalMs)
+  timers.setTimeout(() => sentinelTick(s, timers), currentSteadyIntervalMs())
   return { stop: () => { /* clearTimeout 的句柄管理 */ } }
 }
 ```
@@ -461,10 +526,12 @@ export function startTokenSentinel(opts: { steadyIntervalMs: number; timers?: Ti
 **设计要点**：
 
 - **STEADY 主动 refresh**：每个 STEADY tick 第一件事就是 `refreshNow("scheduled")`，完整继承旧 `scheduleTokenRefresh` 的"到 `refresh_in - 60s` 换 token"语义。这是修复"光靠探活无法主动换 token"的关键。
-- **上游 `refresh_in` 变化即重排**：`result.refreshInSeconds` 非 null 时立即更新 `steadyIntervalMs`，承担旧实现"refresh_in 变了就 clearInterval + 重新 schedule"的语义。
-- **scheduled refresh 失败时指数退避**：通过 `s.scheduledBackoffMs` 实现旧 `retryTokenRefresh` 的语义——失败首次 `REFRESH_INITIAL_BACKOFF_MS`，后续 ×2 上限 `REFRESH_MAX_BACKOFF_MS`，成功后清零回到 `steadyIntervalMs`。
+- **上游 `refresh_in` 变化即重排（由 sentinel 模块统一记录）**：哨兵 tick 不再从 `RefreshResult` 直接读 `refreshInSeconds`，而是通过 `getLastRefreshInSeconds()` 读 module-global 状态。这样无论刷新由 `scheduled` / `llm-401` / `sentinel-401` / `manual` 哪个 reason 触发，最新的 `refresh_in` 都会被反映到下一次 STEADY 周期。
+- **失败退避走 module-global cooldown**：`refreshNow` 内部 `noteFailure()` 维护 `failureCooldownUntil` / `consecutiveFailures`（5s → 10s → … 上限 5min）。哨兵 `scheduleNext()` 在 STEADY 路径优先读 `getRefreshCooldownRemaining()`：>0 时下一次 tick 间隔就是冷却剩余值。**LLM 路径触发的失败同样写入这个 cooldown**，从而堵住"LLM 失败 → 下一个请求立刻又触发"的风暴。
+- **scheduled refresh 失败本 tick 跳过 `cacheModels`**：旧实现失败后进入 retry loop，不会立即二次刷新；本设计若失败后再 `cacheModels`，旧 token 大概率仍 401 → 触发 `refreshNow("sentinel-401")` → 命中刚生效的 cooldown 返回 `ok:false`，徒增噪音。直接交给下一 tick 在 cooldown 过期后一并验证更干净。
 - **PROBING 不主动 refresh**：避免与 LLM 路径触发的 `refreshNow` 重复访问上游；它的角色是"高频探活，给最近的刷新结果做即时复核"。
 - **`decay()` 在判 PROBING 之后**：旧顺序"tick 头 decay → 判阈值"会让 score 正好等于阈值的单次 token-expired 信号被衰减后落到阈值之下，无法进入 PROBING。新顺序先用 `shouldProbeNow()` 判断本 tick 的目标 mode，再 decay，让阈值语义保持"score ≥ 5 即触发"。
+- **`SentinelState` 不再持有周期值副本**：`steadyIntervalMs` / `scheduledBackoffMs` 都已删除，本 tick 的下一次间隔每次从 module-global 重新计算（`getRefreshCooldownRemaining` + `getLastRefreshInSeconds`）。这避免了"local 副本与 global 值不同步"的隐性 bug。
 - **setTimeout 链而非 setInterval**：每个 tick 完整结束才安排下一次，从根本上杜绝重入。
 - **fatal try/catch 双层**：即使 `scheduleNext` 抛异常（不应该发生）也要保证下一次 tick 被安排。
 
@@ -509,11 +576,14 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
 | 单次 LLM 401 + token-expired 文案 | 接收信号；in-flight refresh 复用 | await + 重试一次 | 无（无感） |
 | 并发 N 个 LLM 401 + token-expired | 收到 N 条信号；refresh 只跑 1 次 | 全部 await 同一个 Promise → 各自重试 | 无（无感） |
 | LLM 401 但文案不命中 token-expired | 接收信号（other-401，权重 1） | 直接抛 401 | 用户看见 401；后续请求由哨兵 tick 兜底 |
-| `refreshNow` 失败（网络不通） | 当前 in-flight reject；下次自然重试 | 不重试，原 401 抛出 | 用户看见 401 |
+| `refreshNow` 失败（网络不通） | 进入全局 cooldown（5s 起，×2 上限 5min） | 不重试，原 401 抛出 | 用户看见 401 |
+| **冷却期内后续 LLM 401**（任何触发源） | refreshNow 直接返回 `ok:false, cooldownMs>0`，**不敲上游** | 不重试，原 401 抛出 | 用户看见 401，但不会引发上游访问风暴 |
+| 冷却期内哨兵 tick 到来 | scheduleNext 下一 tick 间隔 = `cooldownMs`，避开冷却 | 不受影响 | 无 |
+| scheduled refresh 失败本 tick | 跳过 cacheModels；下一 tick 等 cooldown 过期后再走 | 不受影响 | 无（短暂内部静默） |
 | `refreshNow` 成功但 token 字面没变 | 返回 `tokenWasUpdated=false` | 不重试 | 用户看见 401（防止白重试） |
 | LLM 重试仍 401 | 不二次触发 refresh（I-5） | 抛出重试响应的 HTTPError | 用户看见 401 |
 | 哨兵 tick 抛任意异常 | 双层 catch，下一 tick 仍被调度（I-4） | 不受影响 | 无 |
-| 进程刚启动尚未跑过哨兵 | 第一次 tick 在 `steadyIntervalMs` 后触发 | 使用 setupCopilotToken 的初始 JWT | 与现状一致 |
+| 进程刚启动尚未跑过哨兵 | 第一次 tick 在 `currentSteadyIntervalMs()` 后触发 | 使用 bootstrap 的初始 JWT | 与现状一致 |
 
 ---
 
@@ -521,7 +591,7 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
 
 `CLAUDE.md` 的 anti-ban 协议核心是"不要无节制敲上游"。本方案严格更优：
 
-1. **刷新次数三重保护**：(1) single-flight 让并发请求只能触发一次；(2) `MIN_REFRESH_INTERVAL_MS` 让短时间内重复触发只跑一次；(3) scheduled refresh 失败走指数退避（5s → 10s → … 上限 5min），频次受控。
+1. **刷新次数三重保护**：(1) single-flight 让并发请求只能触发一次；(2) `MIN_REFRESH_INTERVAL_MS` 让短时间内重复触发只跑一次；(3) **任何触发源**的失败都写入 module-global cooldown（5s → 10s → … 上限 5min），冷却窗口内所有 caller 都直接被拦回，频次受控。
 2. **PROBING 流量可量化**：`PROBE_INTERVAL_MS = 5s`、`PROBE_TICKS = 3`，最坏情况 15 秒内最多 3 次 `/models`。比"每个 LLM 请求自带 retry"低一个数量级。
 3. **哨兵成功 = 健康证据**：每次 `/models` 200 都证明 token 健康，可作为推迟"下一次主动 refresh"的依据（阶段 4 可选优化）。
 
@@ -533,19 +603,20 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
 
 **阶段 1 — 哨兵骨架（独立 PR）**
 
-- 新增 `packages/proxy/src/lib/token-sentinel.ts`，包含 `refreshNow()` + tick loop（STEADY 状态机 + 主动 scheduled refresh 语义，PROBING 留空骨架）+ `bootstrap()`。
+- 新增 `packages/proxy/src/lib/token-sentinel.ts`，包含 `refreshNow()`（含全局 cooldown）+ `noteSuccess/Failure` + tick loop（STEADY 状态机 + 主动 scheduled refresh 语义，PROBING 留空骨架）+ `bootstrap()` + 周期辅助 `getLastRefreshInSeconds` / `getRefreshCooldownRemaining`。
 - 删除 `scheduleTokenRefresh` / `retryTokenRefresh` / `refreshModelsForToken`；`setupCopilotToken` 改调 `sentinel.bootstrap(...)`，不再直接写 `state.copilotToken`。
 - LLM 路径完全不动。
-- 单测：fake timers + mocked fetch，验证 STEADY 周期、**主动 scheduled refresh**、**上游 refresh_in 变化即重排**、**scheduled refresh 失败的指数退避**、refresh-on-401、单 flight、min-interval、`attemptedToken` 短路、I-4 不死锁。
+- 单测：fake timers + mocked fetch，验证 STEADY 周期、**主动 scheduled refresh**、**上游 refresh_in 变化即重排**、**任意触发源失败均进入 module-global cooldown**、**scheduled refresh 失败本 tick 跳过 cacheModels**、refresh-on-401、单 flight、min-interval、`attemptedToken` 短路、I-4 不死锁。
 - **本阶段不解决用户体验问题**，只把单写者 + scheduled refresh 的语义统一到哨兵。可独立合入。
 
 **阶段 2 — 等待 + 重试 + 信号（独立 PR，恢复 PR #129 的用户体验目标）**
 
 - 新增 `packages/proxy/src/lib/token-signal.ts`。
-- 四个 upstream client 加 401 → `await sentinel.refreshNow("llm-401")` + 单次重试。
+- **在 `CopilotXxxConfig` 上引入 `snapshotAuth()` 原子方法**（见 §9）；保留 `getToken()` / `getHeaders()` 给现有非 401 路径。
+- 四个 upstream client 加 401 → `await sentinel.refreshNow("llm-401", usedToken)` + 单次重试，token 与 headers 通过 `snapshotAuth()` 同源读取。
 - 哨兵接入 `tokenSignal.shouldProbeNow()` → PROBING 周期切换。
-- 单测：信号累积、衰减、阈值边界；LLM 客户端 401 重试矩阵（文案命中/不命中 × 刷新成功/失败 × tokenWasUpdated true/false × 重试 ok/fail）。
-- 集测（L2）：并发 N 个 LLM 401 → 上游 `/copilot_internal/v2/token` 只被调用 1 次。
+- 单测：信号累积、衰减、阈值边界；LLM 客户端 401 重试矩阵（文案命中/不命中 × 刷新成功/失败/冷却中 × tokenWasUpdated true/false × 重试 ok/fail）；`snapshotAuth` 原子读出 token 与 headers 中的 Authorization 一致。
+- 集测（L2）：并发 N 个 LLM 401 → 上游 `/copilot_internal/v2/token` 只被调用 1 次；LLM 失败时 cooldown 生效，后续请求不再敲上游。
 - **本阶段完整覆盖 PR #129 的体验目标**。
 
 **阶段 3 — 可观察性 + 关停**
@@ -571,10 +642,13 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
 - shouldProbeNow 在阈值边界正确
 
 **`token-sentinel.test.ts`**：注入 `TimerFactory` + mock `getCopilotToken` + mock `getModels`。
-- STEADY tick 周期 = refresh_in - 60s
+- STEADY tick 周期 = `currentSteadyIntervalMs()`（基于上游最近一次 `refresh_in`）
 - **STEADY tick 每轮主动调用 `refreshNow("scheduled")`**（承担旧 scheduleTokenRefresh 职责）
-- **上游变更 `refresh_in` → 下一次 STEADY 周期重排**：第一次 refresh 返回 1500s，第二次返回 600s；断言 `steadyIntervalMs` 跟着变
-- **scheduled refresh 失败 → 指数退避**：连续 3 次失败的下一 tick 间隔 = 5s → 10s → 20s；成功后立刻回到 `steadyIntervalMs`，`scheduledBackoffMs` 清零
+- **上游变更 `refresh_in` → 下一次 STEADY 周期重排**：第一次 refresh 返回 1500s，第二次返回 600s；断言 `currentSteadyIntervalMs()` 跟着变
+- **`refresh_in` 跨触发源传播**：先用 `refreshNow("llm-401")` 触发一次成功刷新（返回新 refresh_in），断言哨兵下一次 STEADY 周期使用这个新值（**不只是 scheduled 来源**）
+- **`refreshNow` 失败 → 全局 cooldown 生效**：连续 3 次失败后，下一次 tick 间隔 = 当前剩余 cooldown（5s → 10s → 20s 序列）；成功后 `getRefreshCooldownRemaining()` 回到 0
+- **cooldown 期内任意触发源都被拦回**：先让 scheduled 失败建立 cooldown，再调 `refreshNow("llm-401")` → 返回 `ok:false, cooldownMs>0`，**`getCopilotToken` 调用次数不变**
+- **scheduled refresh 失败本 tick 跳过 cacheModels**：scheduled 失败后断言 `getModels` 在本 tick 内未被调用
 - STEADY `/models` 401 → refreshNow → 下一 tick 自然复核
 - PROBING tick **不**主动 refresh，仅 cacheModels
 - /models 5xx → 不刷新、tick 继续
@@ -586,8 +660,8 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
 - **`refreshNow` min-interval**：连续两次调用且 `attemptedToken == state.copilotToken` → 第二次返回 `tokenWasUpdated=false, refreshInSeconds=null`
 - **`refreshNow` attemptedToken 短路**：传入的 `attemptedToken` 与当前 state 不同 → 直接返回 `tokenWasUpdated=true, refreshInSeconds=null`，**不访问上游**
 - **`refreshNow` 成功返回 `refreshInSeconds` 等于上游 `refresh_in`**
-- **`refreshNow` 失败 → inflight 被清空**：失败后下一次调用能正常发起新刷新
-- **bootstrap**：调用后 `state.copilotToken` 被写入、`steadyIntervalMs` 来自首个 refresh_in、loop 启动
+- **`refreshNow` 失败 → inflight 被清空**：失败后下一次调用能正常发起新刷新（前提：cooldown 已过或冷却期为 0）
+- **bootstrap**：调用后 `state.copilotToken` 被写入、`getLastRefreshInSeconds()` 等于首个 refresh_in、loop 启动
 
 **`copilot-{openai,native,responses,embeddings}.test.ts`**：每个 client 覆盖完整 401 矩阵。
 - 2xx → 不上报信号、不调用 refreshNow
@@ -595,8 +669,10 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
 - 401 + token-expired 文案 + refresh 成功 + tokenWasUpdated=true + 重试 2xx → 返回重试响应
 - 401 + token-expired + refresh 成功 + tokenWasUpdated=false → 不重试、抛原 401（**responseBody 不丢**）
 - 401 + token-expired + refresh 失败 → 不重试、抛原 401（**responseBody 不丢**）
+- **401 + token-expired + 命中 cooldown** → refreshNow 返回 `ok:false, cooldownMs>0` → 不重试、抛原 401
 - 401 + token-expired + 重试仍 401 → 抛重试响应的 HTTPError、**不再次触发 refresh**（I-5）
 - **并发尾部请求场景**：模拟 A、B 都用旧 token；B 先撞 401 触发 refresh 成功；A 再撞 401 → A 调 `refreshNow(_, oldToken)` 时短路返回 → A 用新 token 重试成功
+- **`snapshotAuth` 原子性**：mock config 让两次 `getToken` 中间换 token 值；断言 `snapshotAuth()` 返回的 `token` 字段与 headers 中 Authorization 一致（不会发生分裂）
 - 所有 401 路径验证：**不调用 `getCopilotToken`、不写 `state.copilotToken`**（I-1, I-3）
 
 ### 集成测试（L2）
@@ -634,16 +710,17 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
 
 | 参数 | 默认值 | 说明 |
 |---|---|---|
-| `STEADY_INTERVAL_MS` | `(refresh_in - 60) * 1000` | 与历史调度一致 |
+| `STEADY_INTERVAL_FORMULA` | `max((refresh_in - 60) * 1000, MIN_REFRESH_MS)` | 由 `currentSteadyIntervalMs()` 计算，与历史调度一致 |
+| `DEFAULT_STEADY_INTERVAL_MS` | `25 * 60_000` | bootstrap 之前 / `lastRefreshInSeconds == null` 时的兜底周期 |
 | `PROBE_INTERVAL_MS` | `5_000` | PROBING tick 间隔 |
 | `PROBE_TICKS` | `3` | PROBING 持续 tick 数 |
 | `SIGNAL_THRESHOLD` | `5` | shouldProbeNow 阈值；只控制 PROBING，不控制刷新 |
 | `SIGNAL_TOKEN_EXPIRED_WEIGHT` | `3` | token-expired 信号权重 |
 | `SIGNAL_OTHER_401_WEIGHT` | `1` | other-401 信号权重 |
 | `MIN_REFRESH_INTERVAL_MS` | `30_000` | 距上次成功 refresh N 秒内不重复刷（兜底） |
-| `REFRESH_INITIAL_BACKOFF_MS` | `5_000` | 与现有 retryTokenRefresh 一致 |
-| `REFRESH_MAX_BACKOFF_MS` | `5 * 60_000` | 与现有一致 |
-| `MIN_REFRESH_MS` | `30_000` | 与现有 STEADY 间隔下限一致 |
+| `REFRESH_INITIAL_BACKOFF_MS` | `5_000` | 失败 cooldown 起始值；与旧 retryTokenRefresh 一致 |
+| `REFRESH_MAX_BACKOFF_MS` | `5 * 60_000` | 失败 cooldown 上限；与旧实现一致 |
+| `MIN_REFRESH_MS` | `30_000` | STEADY 间隔下限（防止上游返回的 `refresh_in` 过小导致狂刷） |
 
 ---
 
@@ -652,11 +729,14 @@ export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) =>
 | 维度 | 选择 | 原因 |
 |---|---|---|
 | 刷新者数量 | **1（哨兵）** | I-1；架构层免疫并发问题 |
+| 失败退避作用域 | **module-global cooldown** | 所有触发源共享，堵住 LLM 路径触发失败的风暴 |
 | LLM 401 重试 | **await + 重试 1 次** | 恢复 PR #129 的用户体验目标 |
 | 重试触发判据 | **body 文案 token-expired** | 廉价、明确；误判时由哨兵 tick 兜底 |
 | 刷新结果判据 | **`refreshNow` 返回的 tokenWasUpdated** | 避免用同一把死 token 重试 |
+| `refresh_in` 来源 | **sentinel 模块统一记录（`lastRefreshInSeconds`）** | 跨触发源传播；哨兵调度永远用最新值 |
+| token/headers 一致性 | **`config.snapshotAuth()` 原子方法** | 杜绝两次 `state` 读之间发生切换导致 `usedToken` 与 Authorization 分裂 |
 | 信号通道作用 | **仅决定 PROBING 频率档** | 与刷新决策完全解耦，修复 v1 评分硬伤 |
-| 调度容器 | **setTimeout 链** | 杜绝 setInterval 重入；与单写者契合 |
+| 调度容器 | **setTimeout 链 + 无 SentinelState 周期副本** | 杜绝 setInterval 重入；每次从 module-global 重新计算下一间隔 |
 | 模型缓存刷新 | **由哨兵 tick 自然完成** | 删掉 `refreshModelsForToken` 分支 |
 | 重试上限 | **代码层硬编码 1 次** | I-5 显式保证，不依赖运气 |
 
