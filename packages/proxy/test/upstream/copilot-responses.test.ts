@@ -12,6 +12,8 @@ import {
 import { upstreamCharacterisations } from "./__characterisation__/upstream-fixtures"
 import {
   bootstrap as sentinelBootstrap,
+  refreshNow,
+  _debugSnapshot,
   type SentinelHandle,
 } from "../../src/lib/token-sentinel"
 import { _resetTokenSignalForTest, tokenSignal } from "../../src/lib/token-signal"
@@ -281,6 +283,175 @@ describe("CopilotResponsesClient — 401 retry matrix", () => {
     )
     expect(state.copilotToken).toBe("stale-jwt")
     expect(tokenSignal.readScore()).toBe(1)
+    fetchSpy.mockRestore()
+  })
+
+  test("401 token-expired + refresh FAILURE: no retry, original 401 thrown", async () => {
+    const fetchSpy = mockScript({
+      responses: [new Response("token expired", { status: 401 })],
+      tokenRefresh: { ok: false, status: 500, body: "upstream down" },
+    })
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+    vi.useFakeTimers({ now: Date.now() + 60_000 })
+
+    const client = createDefaultCopilotResponsesClient()
+    await expect(client.send({ model: "gpt-5", input: "hi" })).rejects.toThrow(
+      "Failed to create responses",
+    )
+    expect(state.copilotToken).toBe("stale-jwt")
+    vi.useRealTimers()
+    fetchSpy.mockRestore()
+  })
+
+  test("401 token-expired + cooldown active: no retry", async () => {
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+    vi.useFakeTimers({ now: Date.now() + 60_000 })
+
+    const firstSpy = vi.spyOn(globalThis, "fetch").mockImplementation((() =>
+      Promise.resolve(new Response("fail", { status: 500 }))) as unknown as typeof fetch)
+    await refreshNow("llm-401")
+    firstSpy.mockRestore()
+    expect(_debugSnapshot().cooldownRemaining).toBeGreaterThan(0)
+
+    const fetchSpy = mockScript({
+      responses: [new Response("token expired", { status: 401 })],
+    })
+    const client = createDefaultCopilotResponsesClient()
+    await expect(client.send({ model: "gpt-5", input: "hi" })).rejects.toThrow(
+      "Failed to create responses",
+    )
+    expect(state.copilotToken).toBe("stale-jwt")
+    vi.useRealTimers()
+    fetchSpy.mockRestore()
+  })
+
+  test("401 token-expired + tokenWasUpdated=false (min-interval): no retry", async () => {
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+    const fetchSpy = mockScript({
+      responses: [new Response("token expired", { status: 401 })],
+    })
+    const client = createDefaultCopilotResponsesClient()
+    await expect(client.send({ model: "gpt-5", input: "hi" })).rejects.toThrow(
+      "Failed to create responses",
+    )
+    expect(state.copilotToken).toBe("stale-jwt")
+    fetchSpy.mockRestore()
+  })
+
+  test("401 retry STILL 401: throws retry response error, no further refresh", async () => {
+    const fetchSpy = mockScript({
+      responses: [
+        new Response("token expired", { status: 401 }),
+        new Response("token expired again", { status: 401 }),
+      ],
+      tokenRefresh: { ok: true, token: "fresh-jwt" },
+    })
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+    vi.useFakeTimers({ now: Date.now() + 60_000 })
+
+    const client = createDefaultCopilotResponsesClient()
+    await expect(client.send({ model: "gpt-5", input: "hi" })).rejects.toThrow(
+      "Failed to create responses",
+    )
+    expect(state.copilotToken).toBe("fresh-jwt")
+    vi.useRealTimers()
+    fetchSpy.mockRestore()
+  })
+
+  test("concurrent tail: A & B both stale, B refreshes first → A short-circuits", async () => {
+    let idx = 0
+    const responses: Response[] = [
+      new Response("token expired", { status: 401 }),
+      new Response("token expired", { status: 401 }),
+      new Response('{"ok":1}', { status: 200, headers: { "content-type": "application/json" } }),
+      new Response('{"ok":2}', { status: 200, headers: { "content-type": "application/json" } }),
+    ]
+    let tokenCalls = 0
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(((
+      input: string | URL | Request,
+    ) => {
+      const url = typeof input === "string" ? input : input.toString()
+      if (url.includes("/copilot_internal/v2/token")) {
+        tokenCalls += 1
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              token: "fresh-jwt",
+              refresh_in: 1500,
+              expires_at: 9_999_999_999,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        )
+      }
+      const r = responses[idx]
+      if (!r) throw new Error(`unexpected call #${idx + 1}`)
+      idx += 1
+      return Promise.resolve(r)
+    }) as unknown as typeof fetch)
+
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+    vi.useFakeTimers({ now: Date.now() + 60_000 })
+
+    const client = createDefaultCopilotResponsesClient()
+    const [rA, rB] = await Promise.all([
+      client.send({ model: "gpt-5", input: "a" }),
+      client.send({ model: "gpt-5", input: "b" }),
+    ])
+    expect(rA).toBeTruthy()
+    expect(rB).toBeTruthy()
+    expect(tokenCalls).toBeLessThanOrEqual(1)
+    expect(state.copilotToken).toBe("fresh-jwt")
+    vi.useRealTimers()
+    fetchSpy.mockRestore()
+  })
+
+  test("snapshotAuth fixture parity: retry headers carry Authorization + X-Initiator", async () => {
+    const calls: { url: string; auth: string | null; xInitiator: string | null }[] = []
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(((
+      input: string | URL | Request,
+      init?: RequestInit,
+    ) => {
+      const url = typeof input === "string" ? input : input.toString()
+      const h = normaliseHeaders(init?.headers)
+      calls.push({
+        url,
+        auth: h.authorization ?? null,
+        xInitiator: h["x-initiator"] ?? null,
+      })
+      if (url.includes("/copilot_internal/v2/token")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              token: "fresh-jwt",
+              refresh_in: 1500,
+              expires_at: 9_999_999_999,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        )
+      }
+      const respCalls = calls.filter((c) => c.url.endsWith("/responses")).length
+      if (respCalls === 1) return Promise.resolve(new Response("token expired", { status: 401 }))
+      return Promise.resolve(
+        new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
+      )
+    }) as unknown as typeof fetch)
+
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+    vi.useFakeTimers({ now: Date.now() + 60_000 })
+
+    const client = createDefaultCopilotResponsesClient()
+    await client.send({ model: "gpt-5", input: "hi" })
+
+    const respCalls = calls.filter((c) => c.url.endsWith("/responses"))
+    expect(respCalls).toHaveLength(2)
+    expect(respCalls[0]!.auth).toBe("Bearer stale-jwt")
+    expect(respCalls[0]!.xInitiator).toBe("user")
+    expect(respCalls[1]!.auth).toBe("Bearer fresh-jwt")
+    expect(respCalls[1]!.xInitiator).toBe("user")
+
+    vi.useRealTimers()
     fetchSpy.mockRestore()
   })
 })

@@ -12,6 +12,8 @@ import {
 import { upstreamCharacterisations } from "./__characterisation__/upstream-fixtures"
 import {
   bootstrap as sentinelBootstrap,
+  refreshNow,
+  _debugSnapshot,
   type SentinelHandle,
 } from "../../src/lib/token-sentinel"
 import { _resetTokenSignalForTest, tokenSignal } from "../../src/lib/token-signal"
@@ -180,7 +182,9 @@ describe("CopilotEmbeddingsClient — 401 retry matrix", () => {
 
   function mockScript(opts: {
     responses: Response[]
-    tokenRefresh?: { ok: true; token: string }
+    tokenRefresh?:
+      | { ok: true; token: string }
+      | { ok: false; status: number; body: string }
   }): ReturnType<typeof vi.spyOn> {
     let idx = 0
     return vi.spyOn(globalThis, "fetch").mockImplementation(((
@@ -188,15 +192,20 @@ describe("CopilotEmbeddingsClient — 401 retry matrix", () => {
     ) => {
       const url = typeof input === "string" ? input : input.toString()
       if (url.includes("/copilot_internal/v2/token")) {
+        if (opts.tokenRefresh?.ok) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                token: opts.tokenRefresh.token,
+                refresh_in: 1500,
+                expires_at: 9_999_999_999,
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            ),
+          )
+        }
         return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              token: opts.tokenRefresh!.token,
-              refresh_in: 1500,
-              expires_at: 9_999_999_999,
-            }),
-            { status: 200, headers: { "content-type": "application/json" } },
-          ),
+          new Response(opts.tokenRefresh!.body, { status: opts.tokenRefresh!.status }),
         )
       }
       if (url.endsWith("/embeddings")) {
@@ -249,6 +258,199 @@ describe("CopilotEmbeddingsClient — 401 retry matrix", () => {
     )
     expect(state.copilotToken).toBe("stale-jwt")
     expect(tokenSignal.readScore()).toBe(1)
+    fetchSpy.mockRestore()
+  })
+
+  test("401 token-expired + refresh FAILURE: no retry", async () => {
+    const fetchSpy = mockScript({
+      responses: [new Response("token expired", { status: 401 })],
+      tokenRefresh: { ok: false, status: 500, body: "down" },
+    })
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+    vi.useFakeTimers({ now: Date.now() + 60_000 })
+
+    const client = createDefaultCopilotEmbeddingsClient()
+    await expect(client.send({ input: "hi", model: "m" })).rejects.toThrow(
+      "Failed to create embeddings",
+    )
+    expect(state.copilotToken).toBe("stale-jwt")
+    vi.useRealTimers()
+    fetchSpy.mockRestore()
+  })
+
+  test("401 token-expired + cooldown active: no retry", async () => {
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+    vi.useFakeTimers({ now: Date.now() + 60_000 })
+
+    const firstSpy = vi.spyOn(globalThis, "fetch").mockImplementation((() =>
+      Promise.resolve(new Response("fail", { status: 500 }))) as unknown as typeof fetch)
+    await refreshNow("llm-401")
+    firstSpy.mockRestore()
+    expect(_debugSnapshot().cooldownRemaining).toBeGreaterThan(0)
+
+    const fetchSpy = mockScript({
+      responses: [new Response("token expired", { status: 401 })],
+    })
+    const client = createDefaultCopilotEmbeddingsClient()
+    await expect(client.send({ input: "hi", model: "m" })).rejects.toThrow(
+      "Failed to create embeddings",
+    )
+    expect(state.copilotToken).toBe("stale-jwt")
+    vi.useRealTimers()
+    fetchSpy.mockRestore()
+  })
+
+  test("401 token-expired + tokenWasUpdated=false (min-interval): no retry", async () => {
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+    const fetchSpy = mockScript({
+      responses: [new Response("token expired", { status: 401 })],
+    })
+    const client = createDefaultCopilotEmbeddingsClient()
+    await expect(client.send({ input: "hi", model: "m" })).rejects.toThrow(
+      "Failed to create embeddings",
+    )
+    expect(state.copilotToken).toBe("stale-jwt")
+    fetchSpy.mockRestore()
+  })
+
+  test("401 retry STILL 401: throws retry error, no further refresh", async () => {
+    const fetchSpy = mockScript({
+      responses: [
+        new Response("token expired", { status: 401 }),
+        new Response("token expired again", { status: 401 }),
+      ],
+      tokenRefresh: { ok: true, token: "fresh-jwt" },
+    })
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+    vi.useFakeTimers({ now: Date.now() + 60_000 })
+
+    const client = createDefaultCopilotEmbeddingsClient()
+    await expect(client.send({ input: "hi", model: "m" })).rejects.toThrow(
+      "Failed to create embeddings",
+    )
+    expect(state.copilotToken).toBe("fresh-jwt")
+    vi.useRealTimers()
+    fetchSpy.mockRestore()
+  })
+
+  test("concurrent tail: A & B both stale, B refreshes first → A short-circuits", async () => {
+    let idx = 0
+    const responses: Response[] = [
+      new Response("token expired", { status: 401 }),
+      new Response("token expired", { status: 401 }),
+      new Response(
+        JSON.stringify({
+          object: "list",
+          data: [],
+          model: "m",
+          usage: { prompt_tokens: 0, total_tokens: 0 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+      new Response(
+        JSON.stringify({
+          object: "list",
+          data: [],
+          model: "m",
+          usage: { prompt_tokens: 0, total_tokens: 0 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    ]
+    let tokenCalls = 0
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(((
+      input: string | URL | Request,
+    ) => {
+      const url = typeof input === "string" ? input : input.toString()
+      if (url.includes("/copilot_internal/v2/token")) {
+        tokenCalls += 1
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              token: "fresh-jwt",
+              refresh_in: 1500,
+              expires_at: 9_999_999_999,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        )
+      }
+      const r = responses[idx]
+      if (!r) throw new Error(`unexpected call #${idx + 1}`)
+      idx += 1
+      return Promise.resolve(r)
+    }) as unknown as typeof fetch)
+
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+    vi.useFakeTimers({ now: Date.now() + 60_000 })
+
+    const client = createDefaultCopilotEmbeddingsClient()
+    const [rA, rB] = await Promise.all([
+      client.send({ input: "a", model: "m" }),
+      client.send({ input: "b", model: "m" }),
+    ])
+    expect((rA as { object: string }).object).toBe("list")
+    expect((rB as { object: string }).object).toBe("list")
+    expect(tokenCalls).toBeLessThanOrEqual(1)
+    expect(state.copilotToken).toBe("fresh-jwt")
+    vi.useRealTimers()
+    fetchSpy.mockRestore()
+  })
+
+  test("snapshotAuth fixture parity: retry headers carry Authorization (no X-Initiator on embeddings)", async () => {
+    const calls: { url: string; auth: string | null; xInitiator: string | null }[] = []
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(((
+      input: string | URL | Request,
+      init?: RequestInit,
+    ) => {
+      const url = typeof input === "string" ? input : input.toString()
+      const h = normaliseHeaders(init?.headers)
+      calls.push({
+        url,
+        auth: h.authorization ?? null,
+        xInitiator: h["x-initiator"] ?? null,
+      })
+      if (url.includes("/copilot_internal/v2/token")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              token: "fresh-jwt",
+              refresh_in: 1500,
+              expires_at: 9_999_999_999,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        )
+      }
+      const embCalls = calls.filter((c) => c.url.endsWith("/embeddings")).length
+      if (embCalls === 1) return Promise.resolve(new Response("token expired", { status: 401 }))
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            object: "list",
+            data: [],
+            model: "m",
+            usage: { prompt_tokens: 0, total_tokens: 0 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      )
+    }) as unknown as typeof fetch)
+
+    handle = sentinelBootstrap({ token: "stale-jwt", refreshInSeconds: 1500 })
+    vi.useFakeTimers({ now: Date.now() + 60_000 })
+
+    const client = createDefaultCopilotEmbeddingsClient()
+    await client.send({ input: "hi", model: "m" })
+
+    const embCalls = calls.filter((c) => c.url.endsWith("/embeddings"))
+    expect(embCalls).toHaveLength(2)
+    expect(embCalls[0]!.auth).toBe("Bearer stale-jwt")
+    expect(embCalls[0]!.xInitiator).toBe(null) // embeddings: no X-Initiator
+    expect(embCalls[1]!.auth).toBe("Bearer fresh-jwt")
+    expect(embCalls[1]!.xInitiator).toBe(null)
+
+    vi.useRealTimers()
     fetchSpy.mockRestore()
   })
 })
