@@ -6,10 +6,10 @@ import { getCopilotToken } from "./../services/github/get-copilot-token"
 import { getDeviceCode } from "./../services/github/get-device-code"
 import { getGitHubUser } from "./../services/github/get-user"
 import { pollAccessToken } from "./../services/github/poll-access-token"
-import { cacheModels } from "./utils"
 
 import { HTTPError } from "./error"
 import { state } from "./state"
+import { bootstrap as sentinelBootstrap, type SentinelHandle } from "./token-sentinel"
 
 const readGithubToken = () => fs.readFile(PATHS.GITHUB_TOKEN_PATH, "utf8")
 
@@ -19,8 +19,8 @@ const writeGithubToken = (token: string) =>
 // ---------------------------------------------------------------------------
 // Timer factory — injectable for testing, defaults to globalThis
 //
-// `clearTimeout` 是阶段 1 引入 token-sentinel 所需。setInterval / clearInterval
-// 在阶段 1.4 删除 scheduleTokenRefresh 后会被一并清理。
+// 阶段 1：setInterval/clearInterval 仍保留在接口里，但 sentinel 实际不再
+// 使用。未来如果完全移除调度容器，可一并删除。
 // ---------------------------------------------------------------------------
 
 export interface TimerFactory {
@@ -37,91 +37,37 @@ const defaultTimers: TimerFactory = {
   clearTimeout: globalThis.clearTimeout.bind(globalThis),
 }
 
+// ---------------------------------------------------------------------------
+// setupCopilotToken — 单一入口取首把 token + 启动哨兵
+//
+// 重入语义（docs/23-token-sentinel.md §11）：每次进入先 stop 上次返回的
+// sentinelHandle，然后 await getCopilotToken()，最后 sentinel.bootstrap。
+// stop + getCopilotToken 之间的窗口内可能与旧 inflight 短暂并存，旧 inflight
+// 完成时由 generation 隔离丢弃，是 I-2 的显式例外。
+// ---------------------------------------------------------------------------
+
+let sentinelHandle: SentinelHandle | null = null
+
 export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) => {
+  if (sentinelHandle) {
+    sentinelHandle.stop()
+    sentinelHandle = null
+  }
+
   const { token, refresh_in } = await getCopilotToken()
-  state.copilotToken = token
+  sentinelHandle = sentinelBootstrap({ token, refreshInSeconds: refresh_in, timers })
 
   logger.debug("GitHub Copilot Token fetched successfully!")
-
-  scheduleTokenRefresh(refresh_in, timers)
-}
-
-// ---------------------------------------------------------------------------
-// Token refresh with exponential backoff
-// ---------------------------------------------------------------------------
-
-const MIN_REFRESH_MS = 30_000       // floor: never refresh faster than 30s
-const MAX_BACKOFF_MS = 5 * 60_000   // ceiling: 5 minutes between retries
-const INITIAL_BACKOFF_MS = 5_000    // first retry delay
-
-function scheduleTokenRefresh(
-  refreshInSeconds: number,
-  timers: TimerFactory = defaultTimers,
-) {
-  // Clamp: upstream gives refresh_in in seconds, subtract 60s safety margin.
-  // If result is too small, use the floor.
-  const intervalMs = Math.max((refreshInSeconds - 60) * 1000, MIN_REFRESH_MS)
-
-  const timer = timers.setInterval(async () => {
-    try {
-      const { token, refresh_in } = await getCopilotToken()
-      state.copilotToken = token
-      logger.debug("Copilot token refreshed")
-      await refreshModelsForToken()
-
-      // If upstream changed refresh_in, reschedule with new interval
-      const newIntervalMs = Math.max((refresh_in - 60) * 1000, MIN_REFRESH_MS)
-      if (newIntervalMs !== intervalMs) {
-        timers.clearInterval(timer)
-        scheduleTokenRefresh(refresh_in, timers)
-      }
-    } catch (error) {
-      // First failure on the normal interval — switch to retry loop
-      timers.clearInterval(timer)
-      retryTokenRefresh(INITIAL_BACKOFF_MS, refreshInSeconds, error, timers)
-    }
-  }, intervalMs)
 }
 
 /**
- * Retry loop using setTimeout chain with exponential backoff.
- * On success, resumes normal setInterval schedule.
- * On failure, keeps retrying with increasing delay up to MAX_BACKOFF_MS.
+ * Stop the active sentinel loop. Intended for graceful shutdown and tests.
+ * No-op if no loop is active.
  */
-function retryTokenRefresh(
-  backoff: number,
-  originalRefreshInSeconds: number,
-  lastError: unknown,
-  timers: TimerFactory = defaultTimers,
-) {
-  logger.error("Failed to refresh Copilot token, retrying", {
-    error: String(lastError),
-    retryInMs: backoff,
-  })
-
-  timers.setTimeout(async () => {
-    try {
-      const { token, refresh_in } = await getCopilotToken()
-      state.copilotToken = token
-      logger.info("Copilot token recovered after retry")
-      await refreshModelsForToken()
-      // Success — resume normal refresh schedule
-      scheduleTokenRefresh(refresh_in, timers)
-    } catch (retryError) {
-      // Keep retrying with increasing backoff
-      const nextBackoff = Math.min(backoff * 2, MAX_BACKOFF_MS)
-      retryTokenRefresh(nextBackoff, originalRefreshInSeconds, retryError, timers)
-    }
-  }, backoff)
-}
-
-async function refreshModelsForToken(): Promise<void> {
-  try {
-    await cacheModels()
-  } catch (error) {
-    logger.warn("Failed to refresh models after Copilot token refresh", {
-      error: error instanceof Error ? error.message : String(error),
-    })
+export const stopCopilotTokenSentinel = (): void => {
+  if (sentinelHandle) {
+    sentinelHandle.stop()
+    sentinelHandle = null
   }
 }
 

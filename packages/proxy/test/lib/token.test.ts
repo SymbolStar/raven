@@ -40,7 +40,7 @@ vi.mock("../../src/lib/utils", () => ({
 }))
 
 // Import AFTER mock is registered
-const { setupGitHubToken, setupCopilotToken } = await import("../../src/lib/token")
+const { setupGitHubToken, setupCopilotToken, stopCopilotTokenSentinel } = await import("../../src/lib/token")
 
 // ---------------------------------------------------------------------------
 // State save/restore + fetch spy
@@ -60,6 +60,9 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  // Stop sentinel if previous test started one — keeps module-global state
+  // clean for the next test.
+  stopCopilotTokenSentinel()
   state.githubToken = savedGithubToken
   state.copilotToken = savedCopilotToken
   fetchSpy.mockRestore()
@@ -239,149 +242,60 @@ describe("setupGitHubToken", () => {
 // setupCopilotToken + refresh lifecycle
 // ===========================================================================
 
+// ===========================================================================
+// setupCopilotToken — bootstraps the sentinel
+// Full sentinel behaviour (refresh, cooldown, generation isolation, …) lives
+// in token-sentinel.test.ts. Here we only assert setupCopilotToken's two
+// responsibilities:
+//   1) Fetch first token from upstream + bootstrap sentinel with it.
+//   2) Re-entry: stop previous sentinel handle before bootstrapping new one.
+// ===========================================================================
+
 describe("setupCopilotToken", () => {
-  test("initial fetch: stores token in state and schedules refresh", async () => {
+  test("initial call: fetches token, writes state, schedules sentinel tick", async () => {
     const fakeTimers = createFakeTimers()
     mockCopilotTokenResponse("copilot-jwt", 1500)
 
     await setupCopilotToken(fakeTimers)
 
     expect(state.copilotToken).toBe("copilot-jwt")
-    // scheduleTokenRefresh should have created one interval
+    // sentinel.bootstrap scheduled one timeout (not interval)
     expect(fakeTimers.timers).toHaveLength(1)
-    expect(fakeTimers.timers[0]!.type).toBe("interval")
+    expect(fakeTimers.timers[0]!.type).toBe("timeout")
+    expect(fakeTimers.timers[0]!.ms).toBe(1440_000) // (1500 - 60) * 1000
   })
 
-  test("refresh success: callback updates state.copilotToken", async () => {
+  test("re-entry: stops old sentinel before bootstrapping new one", async () => {
     const fakeTimers = createFakeTimers()
-    mockCopilotTokenResponse("copilot-jwt", 1500)
+    mockCopilotTokenResponse("first-jwt", 1500)
+    await setupCopilotToken(fakeTimers)
+    expect(state.copilotToken).toBe("first-jwt")
+    const firstTimer = fakeTimers.timers[0]!
+    expect(firstTimer.cleared).toBe(false)
+
+    // Re-entry with a different token + refresh_in
+    mockCopilotTokenResponse("second-jwt", 600)
     await setupCopilotToken(fakeTimers)
 
-    // Mock next getCopilotToken for refresh (same refresh_in → no reschedule)
-    mockCopilotTokenResponse("copilot-jwt-refreshed", 1500)
-    await fakeTimers.tick(fakeTimers.timers[0]!.id)
-
-    expect(state.copilotToken).toBe("copilot-jwt-refreshed")
-    // Original timer still active (same interval)
-    expect(fakeTimers.timers[0]!.cleared).toBe(false)
+    expect(state.copilotToken).toBe("second-jwt")
+    // Old timer was cleared
+    expect(firstTimer.cleared).toBe(true)
+    // New timer scheduled with new interval
+    const live = fakeTimers.timers.filter((t) => !t.cleared)
+    expect(live).toHaveLength(1)
+    expect(live[0]!.ms).toBe(540_000) // (600 - 60) * 1000
   })
 
-  test("refresh success: refreshes cached models for the new token", async () => {
+  test("after explicit stopCopilotTokenSentinel(): no pending timer", async () => {
     const fakeTimers = createFakeTimers()
-    mockCopilotTokenResponse("copilot-jwt", 1500)
+    mockCopilotTokenResponse("jwt", 1500)
     await setupCopilotToken(fakeTimers)
+    expect(fakeTimers.timers.filter((t) => !t.cleared)).toHaveLength(1)
 
-    cacheModelsMock.mockClear()
-    mockCopilotTokenResponse("copilot-jwt-refreshed", 1500)
-    await fakeTimers.tick(fakeTimers.timers[0]!.id)
+    stopCopilotTokenSentinel()
+    expect(fakeTimers.timers.filter((t) => !t.cleared)).toHaveLength(0)
 
-    expect(state.copilotToken).toBe("copilot-jwt-refreshed")
-    expect(cacheModelsMock).toHaveBeenCalledTimes(1)
-  })
-
-  test("refresh success: models refresh failure is swallowed (does not break token refresh)", async () => {
-    const fakeTimers = createFakeTimers()
-    mockCopilotTokenResponse("copilot-jwt", 1500)
-    await setupCopilotToken(fakeTimers)
-
-    cacheModelsMock.mockClear()
-    // First reject with Error to exercise instanceof branch
-    cacheModelsMock.mockRejectedValueOnce(new Error("models endpoint down"))
-    mockCopilotTokenResponse("copilot-jwt-refreshed", 1500)
-    await fakeTimers.tick(fakeTimers.timers[0]!.id)
-
-    expect(state.copilotToken).toBe("copilot-jwt-refreshed")
-    expect(cacheModelsMock).toHaveBeenCalledTimes(1)
-    // Timer remains active — refresh schedule survives the failure
-    expect(fakeTimers.timers[0]!.cleared).toBe(false)
-
-    // Now reject with a non-Error value to exercise the String(error) branch
-    cacheModelsMock.mockClear()
-    cacheModelsMock.mockRejectedValueOnce("string failure")
-    mockCopilotTokenResponse("copilot-jwt-refreshed-2", 1500)
-    await fakeTimers.tick(fakeTimers.timers[0]!.id)
-
-    expect(state.copilotToken).toBe("copilot-jwt-refreshed-2")
-    expect(cacheModelsMock).toHaveBeenCalledTimes(1)
-  })
-
-  test("refresh with changed refresh_in: reschedules with new interval", async () => {
-    const fakeTimers = createFakeTimers()
-    mockCopilotTokenResponse("copilot-jwt", 1500)
-    await setupCopilotToken(fakeTimers)
-
-    // Return different refresh_in → should reschedule
-    mockCopilotTokenResponse("copilot-jwt-v2", 3000)
-    await fakeTimers.tick(fakeTimers.timers[0]!.id)
-
-    expect(state.copilotToken).toBe("copilot-jwt-v2")
-    // Original timer cleared
-    expect(fakeTimers.timers[0]!.cleared).toBe(true)
-    // New timer created
-    expect(fakeTimers.timers).toHaveLength(2)
-    expect(fakeTimers.timers[1]!.type).toBe("interval")
-    expect(fakeTimers.timers[1]!.cleared).toBe(false)
-  })
-
-  test("refresh failure → switches to retry backoff (setTimeout)", async () => {
-    const fakeTimers = createFakeTimers()
-    mockCopilotTokenResponse("copilot-jwt", 1500)
-    await setupCopilotToken(fakeTimers)
-
-    // Refresh fails
-    fetchSpy.mockResolvedValueOnce(new Response("error", { status: 500 }))
-    await fakeTimers.tick(fakeTimers.timers[0]!.id)
-
-    // Original interval cleared
-    expect(fakeTimers.timers[0]!.cleared).toBe(true)
-    // retryTokenRefresh creates a setTimeout
-    expect(fakeTimers.timers).toHaveLength(2)
-    expect(fakeTimers.timers[1]!.type).toBe("timeout")
-    // Initial backoff = 5000ms
-    expect(fakeTimers.timers[1]!.ms).toBe(5_000)
-  })
-
-  test("retry success → resumes normal schedule (setInterval)", async () => {
-    const fakeTimers = createFakeTimers()
-    mockCopilotTokenResponse("copilot-jwt", 1500)
-    await setupCopilotToken(fakeTimers)
-
-    // Refresh fails → enters retry
-    fetchSpy.mockResolvedValueOnce(new Response("error", { status: 500 }))
-    await fakeTimers.tick(fakeTimers.timers[0]!.id)
-
-    // Retry succeeds
-    mockCopilotTokenResponse("copilot-recovered", 1500)
-    await fakeTimers.tick(fakeTimers.timers[1]!.id)
-
-    expect(state.copilotToken).toBe("copilot-recovered")
-    // Should have created a new setInterval (timer index 2)
-    expect(fakeTimers.timers).toHaveLength(3)
-    expect(fakeTimers.timers[2]!.type).toBe("interval")
-  })
-
-  test("retry failure → doubles backoff (capped at MAX_BACKOFF_MS)", async () => {
-    const fakeTimers = createFakeTimers()
-    mockCopilotTokenResponse("copilot-jwt", 1500)
-    await setupCopilotToken(fakeTimers)
-
-    // Refresh fails → enters retry at 5000ms
-    fetchSpy.mockResolvedValueOnce(new Response("error", { status: 500 }))
-    await fakeTimers.tick(fakeTimers.timers[0]!.id)
-
-    // Retry fails → should create next timeout at 10000ms
-    fetchSpy.mockResolvedValueOnce(new Response("error", { status: 500 }))
-    await fakeTimers.tick(fakeTimers.timers[1]!.id)
-
-    expect(fakeTimers.timers).toHaveLength(3)
-    expect(fakeTimers.timers[2]!.type).toBe("timeout")
-    expect(fakeTimers.timers[2]!.ms).toBe(10_000)
-
-    // Retry fails again → 20000ms
-    fetchSpy.mockResolvedValueOnce(new Response("error", { status: 500 }))
-    await fakeTimers.tick(fakeTimers.timers[2]!.id)
-
-    expect(fakeTimers.timers[3]!.type).toBe("timeout")
-    expect(fakeTimers.timers[3]!.ms).toBe(20_000)
+    // Second stop is a no-op
+    expect(() => stopCopilotTokenSentinel()).not.toThrow()
   })
 })
