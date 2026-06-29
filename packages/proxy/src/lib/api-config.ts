@@ -26,9 +26,31 @@ export const copilotBaseUrl = (state: State) =>
   state.accountType === "individual" ?
     "https://api.githubcopilot.com"
   : `https://api.${state.accountType}.githubcopilot.com`
-export const copilotHeaders = (state: State, vision: boolean = false) => {
+
+/**
+ * Build Copilot upstream headers using a caller-supplied token.
+ *
+ * Used by snapshotAuth() to atomically pair "the token captured for this
+ * request" with the Authorization header — preventing the race where
+ * state.copilotToken changes between getToken() and getHeaders() reads.
+ *
+ * Behaviour notes:
+ *   - Accepts string | null to match state.copilotToken's type, so the thin
+ *     wrapper `copilotHeaders(state, vision)` can forward without an
+ *     extra null-guard.
+ *   - Internally uses `token ?? ""` to avoid the literal "Bearer null"
+ *     string. The legacy `copilotHeaders(state)` would render
+ *     "Bearer null" when state.copilotToken is null; the new path renders
+ *     "Bearer " instead — both are unusable, but the latter doesn't ship
+ *     the literal "null" upstream. Normal-token behaviour is unchanged.
+ */
+export const copilotHeadersForToken = (
+  state: State,
+  token: string | null,
+  vision: boolean = false,
+) => {
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${state.copilotToken}`,
+    Authorization: `Bearer ${token ?? ""}`,
     "content-type": standardHeaders()["content-type"],
     "copilot-integration-id": "vscode-chat",
     "editor-version": `vscode/${state.vsCodeVersion}`,
@@ -45,6 +67,9 @@ export const copilotHeaders = (state: State, vision: boolean = false) => {
 
   return headers
 }
+
+export const copilotHeaders = (state: State, vision: boolean = false) =>
+  copilotHeadersForToken(state, state.copilotToken, vision)
 
 export const GITHUB_API_BASE_URL = "https://api.github.com"
 export const githubHeaders = (state: State) => ({

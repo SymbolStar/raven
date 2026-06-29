@@ -1,6 +1,10 @@
 import { describe, expect, test, beforeEach, afterEach } from "vitest"
 
-import { copilotHeaders, githubHeaders } from "../../src/lib/api-config"
+import {
+  copilotHeaders,
+  copilotHeadersForToken,
+  githubHeaders,
+} from "../../src/lib/api-config"
 import { state } from "../../src/lib/state"
 
 const saved = {
@@ -68,5 +72,46 @@ describe("githubHeaders", () => {
     expect(headers["editor-version"]).toBe("vscode/1.117.0")
     expect(headers["editor-plugin-version"]).toBe("copilot-chat/0.45.1")
     expect(headers["user-agent"]).toBe("GitHubCopilotChat/0.45.1")
+  })
+})
+
+describe("copilotHeadersForToken", () => {
+  test("uses caller-supplied token instead of state.copilotToken", () => {
+    state.copilotToken = "state-token"
+    const headers = copilotHeadersForToken(state, "explicit-token")
+    expect(headers.Authorization).toBe("Bearer explicit-token")
+  })
+
+  test("ignores state mutation after capture (atomic snapshot)", () => {
+    state.copilotToken = "before"
+    const captured = state.copilotToken
+    state.copilotToken = "after"
+    const headers = copilotHeadersForToken(state, captured)
+    expect(headers.Authorization).toBe("Bearer before")
+  })
+
+  test("null token renders as 'Bearer ' (not literal 'Bearer null')", () => {
+    const headers = copilotHeadersForToken(state, null)
+    expect(headers.Authorization).toBe("Bearer ")
+  })
+
+  test("vision flag adds copilot-vision-request header", () => {
+    expect(
+      copilotHeadersForToken(state, "tok")["copilot-vision-request"],
+    ).toBeUndefined()
+    expect(
+      copilotHeadersForToken(state, "tok", true)["copilot-vision-request"],
+    ).toBe("true")
+  })
+
+  test("copilotHeaders is a thin wrapper that delegates to copilotHeadersForToken", () => {
+    state.copilotToken = "wrap-token"
+    const direct = copilotHeadersForToken(state, "wrap-token")
+    const wrapped = copilotHeaders(state)
+    // x-request-id differs per call; everything else must match
+    expect({ ...wrapped, "x-request-id": undefined }).toEqual({
+      ...direct,
+      "x-request-id": undefined,
+    })
   })
 })
