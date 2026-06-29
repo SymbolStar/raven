@@ -538,13 +538,15 @@ export function copilotHeadersForToken(
   // Authorization: `Bearer ${token ?? ""}`
 }
 
-// 原 copilotHeaders 改成调用 copilotHeadersForToken（行为零变化）：
+// 原 copilotHeaders 改成调用 copilotHeadersForToken
+// （正常 token 场景行为零变化；state.copilotToken == null 时旧实现会拼出
+// "Bearer null"，新实现拼出 "Bearer "——两者都是异常路径，但后者更安全。）：
 export const copilotHeaders = (state: State, vision: boolean = false) =>
   copilotHeadersForToken(state, state.copilotToken, vision)
 ```
 
 这样：
-- 旧调用方零行为变化（`copilotHeaders(state)` 仍按 state 当前 token 拼）。
+- 旧调用方在正常 token 场景行为零变化（`copilotHeaders(state)` 仍按 state 当前 token 拼）；`state.copilotToken == null` 的异常路径从"Bearer null"变为"Bearer "，两者都不可用但后者不会把字面 "null" 当 token 上送。
 - `snapshotAuth()` 内部用 `copilotHeadersForToken(state, capturedToken, vision)`，杜绝二次读 state。
 - 单测可以验证"传入 token A 后，即使期间换 state.copilotToken = B，返回 headers 中 Authorization 仍是 A"。
 
