@@ -1,18 +1,16 @@
 /**
  * Token signal channel — used by upstream clients to report auth failures.
  *
- * 阶段 1 提供 no-op 实现：
- *   - reportAuthFailure / decay 为空函数
- *   - shouldProbeNow 恒返回 false
- *   - readScore 恒返回 0
+ * 完整实现（阶段 2）：score 累积 + decay + 阈值判定。
  *
- * 让 token-sentinel 的主循环可以无条件调用 tokenSignal.shouldProbeNow() /
- * decay() / reportAuthFailure()，但 PROBING 路径在阶段 1 永不触发。
+ * 决策语义（docs/23-token-sentinel.md §8）：
+ *   - reportAuthFailure("token-expired") → score += 3
+ *   - reportAuthFailure("other-401")     → score += 1
+ *   - shouldProbeNow() → score >= SIGNAL_THRESHOLD (5)
+ *   - decay()         → score = max(0, score - 1)
  *
- * 阶段 2 把本文件替换为完整实现（score 累积 / decay / 阈值判定），接口签名
- * 保持不变。
- *
- * 见 docs/23-token-sentinel.md §8。
+ * 信号只决定 PROBING 频率档，**不决定**是否触发刷新——刷新决策由
+ * client 直接调 refreshNow 完成。
  */
 
 export type AuthFailureReason = "token-expired" | "other-401"
@@ -25,17 +23,30 @@ export interface TokenSignal {
   readScore(): number
 }
 
+const SIGNAL_THRESHOLD = 5
+const SIGNAL_TOKEN_EXPIRED_WEIGHT = 3
+const SIGNAL_OTHER_401_WEIGHT = 1
+
+let score = 0
+
 export const tokenSignal: TokenSignal = {
-  reportAuthFailure(_reason: AuthFailureReason): void {
-    // no-op (phase 1)
+  reportAuthFailure(reason: AuthFailureReason): void {
+    score += reason === "token-expired"
+      ? SIGNAL_TOKEN_EXPIRED_WEIGHT
+      : SIGNAL_OTHER_401_WEIGHT
   },
   shouldProbeNow(): boolean {
-    return false
+    return score >= SIGNAL_THRESHOLD
   },
   decay(): void {
-    // no-op (phase 1)
+    score = Math.max(0, score - 1)
   },
   readScore(): number {
-    return 0
+    return score
   },
+}
+
+/** Test-only: reset internal score to 0. Production code never calls this. */
+export function _resetTokenSignalForTest(): void {
+  score = 0
 }

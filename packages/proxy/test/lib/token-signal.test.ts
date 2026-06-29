@@ -1,25 +1,70 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test, beforeEach } from "vitest"
 
-import { tokenSignal } from "../../src/lib/token-signal"
+import {
+  tokenSignal,
+  _resetTokenSignalForTest,
+} from "../../src/lib/token-signal"
 
-describe("tokenSignal (phase 1: no-op)", () => {
-  test("readScore is always 0", () => {
+beforeEach(() => {
+  _resetTokenSignalForTest()
+})
+
+describe("tokenSignal", () => {
+  test("initial state: score = 0, shouldProbeNow = false", () => {
     expect(tokenSignal.readScore()).toBe(0)
-  })
-
-  test("shouldProbeNow is always false", () => {
     expect(tokenSignal.shouldProbeNow()).toBe(false)
   })
 
-  test("reportAuthFailure does not change score", () => {
+  test("token-expired adds 3 to score", () => {
     tokenSignal.reportAuthFailure("token-expired")
+    expect(tokenSignal.readScore()).toBe(3)
+  })
+
+  test("other-401 adds 1 to score", () => {
     tokenSignal.reportAuthFailure("other-401")
-    expect(tokenSignal.readScore()).toBe(0)
+    expect(tokenSignal.readScore()).toBe(1)
+  })
+
+  test("shouldProbeNow is true at exactly threshold (5)", () => {
+    tokenSignal.reportAuthFailure("token-expired") // +3
+    tokenSignal.reportAuthFailure("other-401") // +1
+    tokenSignal.reportAuthFailure("other-401") // +1 → 5
+    expect(tokenSignal.readScore()).toBe(5)
+    expect(tokenSignal.shouldProbeNow()).toBe(true)
+  })
+
+  test("shouldProbeNow is false just below threshold (4)", () => {
+    tokenSignal.reportAuthFailure("token-expired") // +3
+    tokenSignal.reportAuthFailure("other-401") // +1 → 4
     expect(tokenSignal.shouldProbeNow()).toBe(false)
   })
 
-  test("decay does not throw and keeps score at 0", () => {
+  test("decay reduces score by 1", () => {
+    tokenSignal.reportAuthFailure("token-expired") // 3
+    tokenSignal.decay()
+    expect(tokenSignal.readScore()).toBe(2)
+  })
+
+  test("decay clamps at 0 (does not go negative)", () => {
+    tokenSignal.decay()
+    tokenSignal.decay()
     tokenSignal.decay()
     expect(tokenSignal.readScore()).toBe(0)
+  })
+
+  test("score accumulates across multiple signals", () => {
+    tokenSignal.reportAuthFailure("token-expired") // 3
+    tokenSignal.reportAuthFailure("token-expired") // 6
+    expect(tokenSignal.readScore()).toBe(6)
+    expect(tokenSignal.shouldProbeNow()).toBe(true)
+  })
+
+  test("two token-expired signals (score 6) → 1 decay → still above threshold (5)", () => {
+    tokenSignal.reportAuthFailure("token-expired")
+    tokenSignal.reportAuthFailure("token-expired")
+    tokenSignal.decay() // 6 → 5
+    expect(tokenSignal.shouldProbeNow()).toBe(true)
+    tokenSignal.decay() // 5 → 4
+    expect(tokenSignal.shouldProbeNow()).toBe(false)
   })
 })
