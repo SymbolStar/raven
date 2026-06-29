@@ -100,6 +100,10 @@ function createFakeTimers(): TimerFactory & {
       timers.push({ callback: cb, ms, id, type: "timeout", cleared: false })
       return id as unknown as ReturnType<typeof globalThis.setTimeout>
     }) as typeof globalThis.setTimeout,
+    clearTimeout: ((id: number) => {
+      const t = timers.find((t) => t.id === id)
+      if (t) t.cleared = true
+    }) as typeof globalThis.clearTimeout,
     async tick(id: number) {
       const t = timers.find((t) => t.id === id)
       if (t && !t.cleared) await t.callback()

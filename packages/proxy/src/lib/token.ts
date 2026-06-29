@@ -18,18 +18,23 @@ const writeGithubToken = (token: string) =>
 
 // ---------------------------------------------------------------------------
 // Timer factory — injectable for testing, defaults to globalThis
+//
+// `clearTimeout` 是阶段 1 引入 token-sentinel 所需。setInterval / clearInterval
+// 在阶段 1.4 删除 scheduleTokenRefresh 后会被一并清理。
 // ---------------------------------------------------------------------------
 
 export interface TimerFactory {
   setInterval: typeof globalThis.setInterval
   clearInterval: typeof globalThis.clearInterval
   setTimeout: typeof globalThis.setTimeout
+  clearTimeout: typeof globalThis.clearTimeout
 }
 
 const defaultTimers: TimerFactory = {
   setInterval: globalThis.setInterval.bind(globalThis),
   clearInterval: globalThis.clearInterval.bind(globalThis),
   setTimeout: globalThis.setTimeout.bind(globalThis),
+  clearTimeout: globalThis.clearTimeout.bind(globalThis),
 }
 
 export const setupCopilotToken = async (timers: TimerFactory = defaultTimers) => {
