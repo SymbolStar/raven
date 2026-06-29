@@ -354,9 +354,17 @@ export async function refreshNow(
   }
 
   // 4. min-interval 兜底
-  const sinceLast = Date.now() - lastSuccessAt
-  if (sinceLast < MIN_REFRESH_INTERVAL_MS && lastSuccessAt > 0) {
-    return { ok: true, tokenWasUpdated: false, refreshInSeconds: null }
+  //    sentinel-401 (post-refresh /models 401 validation) bypasses this:
+  //    a scheduled refresh that just landed could have produced a fresh token
+  //    that still isn't accepted by /models. min-interval would block the
+  //    corrective re-refresh and leave a bad token in place for the full
+  //    MIN_REFRESH_INTERVAL_MS window. Cooldown (step 3) and single-flight
+  //    (step 2) still apply, so this exemption is bounded.
+  if (reason !== "sentinel-401") {
+    const sinceLast = Date.now() - lastSuccessAt
+    if (sinceLast < MIN_REFRESH_INTERVAL_MS && lastSuccessAt > 0) {
+      return { ok: true, tokenWasUpdated: false, refreshInSeconds: null }
+    }
   }
 
   // 5. capture generation + sentinel-owned 标志

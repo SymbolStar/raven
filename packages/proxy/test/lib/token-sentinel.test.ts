@@ -354,19 +354,58 @@ describe("sentinelTick: STEADY", () => {
     expect(pending[0]!.ms).toBe(1440_000)
   })
 
-  test("/models returns 401: triggers sentinel-401 refresh (min-interval blocks upstream)", async () => {
+  test("/models returns 401: triggers sentinel-401 refresh that BYPASSES min-interval (corrective second upstream call)", async () => {
     startSentinel("tok-1", 1500)
+    // First scheduled refresh succeeds with tok-2
     getCopilotTokenMock.mockResolvedValueOnce({
       token: "tok-2",
       refresh_in: 1500,
       expires_at: 9_999_999_999,
     })
+    // cacheModels with tok-2 returns 401 (post-refresh validation failure)
     cacheModelsMock.mockRejectedValueOnce(new HTTPError("models 401", 401))
+    // sentinel-401 refresh must succeed too (gets tok-3) — bypasses min-interval
+    getCopilotTokenMock.mockResolvedValueOnce({
+      token: "tok-3",
+      refresh_in: 1500,
+      expires_at: 9_999_999_999,
+    })
     await harness.flushPending()
 
-    // Scheduled refresh ran once; sentinel-401 hit min-interval (just refreshed)
-    expect(getCopilotTokenMock).toHaveBeenCalledTimes(1)
+    // Two upstream calls: scheduled + sentinel-401 (NOT blocked by min-interval)
+    expect(getCopilotTokenMock).toHaveBeenCalledTimes(2)
+    expect(state.copilotToken).toBe("tok-3")
     expect(cacheModelsMock).toHaveBeenCalledTimes(1)
+  })
+
+  test("sentinel-401 bypass is bounded by cooldown: if cooldown active, still returns ok:false", async () => {
+    startSentinel("tok-1", 1500)
+    // First tick fails → cooldown set
+    getCopilotTokenMock.mockRejectedValueOnce(new HTTPError("f1", 500))
+    await harness.flushPending()
+    expect(_debugSnapshot().cooldownRemaining).toBeGreaterThan(0)
+    getCopilotTokenMock.mockClear()
+
+    // Direct sentinel-401 call during cooldown → blocked
+    const r = await refreshNow("sentinel-401")
+    expect(r.ok).toBe(false)
+    expect(getCopilotTokenMock).not.toHaveBeenCalled()
+  })
+
+  test("llm-401 and scheduled still respect min-interval (only sentinel-401 bypasses)", async () => {
+    startSentinel("tok-1", 1500)
+
+    // llm-401 right after bootstrap (lastSuccessAt set) → min-interval blocks
+    const r1 = await refreshNow("llm-401")
+    expect(r1).toEqual({ ok: true, tokenWasUpdated: false, refreshInSeconds: null })
+
+    const r2 = await refreshNow("scheduled")
+    expect(r2).toEqual({ ok: true, tokenWasUpdated: false, refreshInSeconds: null })
+
+    const r3 = await refreshNow("manual")
+    expect(r3).toEqual({ ok: true, tokenWasUpdated: false, refreshInSeconds: null })
+
+    expect(getCopilotTokenMock).not.toHaveBeenCalled()
   })
 
   test("/models 5xx: tick continues, no refresh triggered", async () => {
