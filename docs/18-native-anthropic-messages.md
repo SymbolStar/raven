@@ -317,6 +317,16 @@ function filterAnthropicBeta(header: string | undefined): string | undefined {
 | `anthropic-beta` header | 过滤为 `ALLOWED_BETAS` 子集 |
 | `service_tier` | 移除（Copilot 不支持） |
 
+### 模型 ID 格式：保持透传，不做翻译
+
+Copilot 上游对 Claude 模型 ID 的两种写法 —— 点号 `claude-opus-4.8` 和连字符 `claude-opus-4-8` —— **均可正常处理**，请求与响应都不挑格式。因此 **Raven 在模型 ID 上保持纯透传，不在 `/v1/models` 响应、native `adaptChunk`/`adaptJson` 或 `preprocess.ts` 中做任何 dot ↔ hyphen 改写**。
+
+> ⚠️ 历史教训：曾观察到 `ccstatusline` 把 `claude-opus-4.8` 显示成通用的 "Opus 4"（minor 版本号丢失），一度误判为 Raven 需要在出站时把点号翻译回连字符。`d15e6e6` / `8b9aad1` 两版翻译实现当天即被 `d0c647e` / `809c3c3` 全部回退，净代码变化为零。
+>
+> **根因在客户端，不在 Raven**：`ccstatusline` 通过 `includes()` 匹配解析 marketing name，只认连字符形式；点号形式落入通用分支。**正确修复是在 cc switch 客户端配置里使用连字符 ID（`claude-opus-4-8`）**，而非让 Raven 替客户端的解析器擦屁股。
+>
+> 准则：当某个症状只在客户端的*显示*层出现时，先确认上游是否真的处理不了该值，再决定是否在代理侧加翻译逻辑。
+
 ### `/v1/models` API 字段扩展
 
 当前 Raven 的 `/v1/models` 返回简化的 `ModelEntry` 格式，丢失了关键字段。**注意**：不能直接透传 Copilot 原始对象，因为：

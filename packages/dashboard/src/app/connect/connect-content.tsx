@@ -330,6 +330,17 @@ cc-switch status`}
           />
         </div>
       </div>
+      <div className="flex items-start gap-2 text-xs text-amber-600 dark:text-amber-400">
+        <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" strokeWidth={1.5} />
+        <span>
+          When configuring the model, use the hyphenated ID (e.g.{" "}
+          <code className="bg-secondary/70 px-1 rounded">claude-opus-4-8</code>), not the
+          dotted form (<code className="bg-secondary/70 px-1 rounded">claude-opus-4.8</code>).
+          Both work upstream, but the status line only resolves the marketing name
+          (&ldquo;Opus 4.8&rdquo;) from the hyphenated form &mdash; the dotted form shows a
+          generic &ldquo;Opus 4&rdquo;.
+        </span>
+      </div>
     </div>
   );
 }
