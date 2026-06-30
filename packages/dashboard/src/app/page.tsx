@@ -6,6 +6,7 @@ import { StatCard } from "@/components/stats/stat-card";
 import { FetchError } from "@/components/fetch-error";
 import { FilterBar } from "@/components/analytics/filter-bar";
 import { AnalyticsCharts } from "./analytics-charts";
+import { SentinelStatusPanel } from "./sentinel-status-panel";
 import { safeFetch } from "@/lib/proxy";
 import type { SummaryStats, ExtendedTimeseriesBucket, BreakdownEntry, Percentiles } from "@/lib/types";
 import { formatCompact, formatLatency, formatPercent } from "@/lib/chart-config";
@@ -138,6 +139,9 @@ export default async function HomePage({ searchParams }: PageProps) {
           clientBreakdown={clientBreakdown}
           strategyBreakdown={strategyBreakdown}
         />
+
+        {/* Token refresh sentinel — observability for the 401 auto-retry path */}
+        <SentinelStatusPanel />
       </div>
     </AppShell>
   );
