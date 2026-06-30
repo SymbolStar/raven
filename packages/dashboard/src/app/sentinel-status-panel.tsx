@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ShieldCheck, ShieldAlert, RefreshCcw, Activity } from "lucide-react";
 import { DashboardSegment } from "@/components/layout/dashboard-segment";
 import { useRingBuffer } from "@/hooks/use-ring-buffer";
 import {
@@ -27,19 +26,14 @@ const SIGNAL_HISTORY_LEN = 60; // ~5 minutes at 5 s poll
 
 function PanelShell({
   title,
-  icon: Icon,
   children,
 }: {
   title: string;
-  icon: typeof ShieldAlert;
   children: React.ReactNode;
 }) {
   return (
     <div className="bg-secondary rounded-card p-3 md:p-4 h-full flex flex-col">
-      <div className="flex items-center gap-2 mb-3">
-        <Icon className="h-4 w-4 text-muted-foreground" aria-hidden />
-        <h3 className="text-card-label font-medium">{title}</h3>
-      </div>
+      <h3 className="text-card-label mb-3 font-medium">{title}</h3>
       <div className="flex-1 min-h-0 flex flex-col">{children}</div>
     </div>
   );
@@ -120,18 +114,15 @@ export function SentinelStatusPanel({ initialData = null }: SentinelStatusPanelP
         <p className="text-meta text-destructive">Stale: {error}</p>
       )}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 items-stretch">
-        <PanelShell title="401 Occurrences" icon={ShieldAlert}>
+        <PanelShell title="401 Occurrences">
           <OccurrencesDonut slices={slices} />
         </PanelShell>
 
-        <PanelShell title="LLM-401 Auto Retry" icon={RefreshCcw}>
+        <PanelShell title="LLM-401 Auto Retry">
           <RetryBar stacks={retry} />
         </PanelShell>
 
-        <PanelShell
-          title="Live State"
-          icon={data.mode === "probing" ? Activity : ShieldCheck}
-        >
+        <PanelShell title="Live State">
           <LiveState
             status={data}
             signalHistory={signal.snapshot()}
