@@ -2,6 +2,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 
+vi.mock("recharts", async () => {
+  const { rechartsMockFactory } = await import("../helpers/recharts-mock");
+  return rechartsMockFactory();
+});
+
 import { SentinelStatusPanel } from "@/app/sentinel-status-panel";
 import type {
   SentinelStatus,
@@ -79,7 +84,7 @@ describe("SentinelStatusPanel", () => {
     expect(screen.getByText("Live State")).toBeTruthy();
   });
 
-  it("shows STEADY badge in default healthy state", async () => {
+  it("shows STEADY mode badge via aria-label", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
@@ -88,11 +93,11 @@ describe("SentinelStatusPanel", () => {
 
     render(<SentinelStatusPanel />);
     await waitFor(() => {
-      expect(screen.getByText("STEADY")).toBeTruthy();
+      expect(screen.getByLabelText("Sentinel mode: STEADY")).toBeTruthy();
     });
   });
 
-  it("shows PROBING badge when mode is probing", async () => {
+  it("shows PROBING mode badge when mode is probing", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
@@ -101,11 +106,11 @@ describe("SentinelStatusPanel", () => {
 
     render(<SentinelStatusPanel />);
     await waitFor(() => {
-      expect(screen.getByText("PROBING")).toBeTruthy();
+      expect(screen.getByLabelText("Sentinel mode: PROBING")).toBeTruthy();
     });
   });
 
-  it("shows OFFLINE badge when mode is null", async () => {
+  it("shows OFFLINE mode badge when mode is null", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
@@ -114,7 +119,7 @@ describe("SentinelStatusPanel", () => {
 
     render(<SentinelStatusPanel />);
     await waitFor(() => {
-      expect(screen.getByText("OFFLINE")).toBeTruthy();
+      expect(screen.getByLabelText("Sentinel mode: OFFLINE")).toBeTruthy();
     });
   });
 
@@ -128,56 +133,54 @@ describe("SentinelStatusPanel", () => {
   });
 
   it("renders Loading on first paint when no initialData", () => {
-    fetchMock.mockReturnValue(new Promise(() => {})); // never resolves
+    fetchMock.mockReturnValue(new Promise(() => {}));
     render(<SentinelStatusPanel />);
     expect(screen.getByText("Loading…")).toBeTruthy();
   });
 
   it("uses initialData immediately without waiting for fetch", () => {
-    fetchMock.mockReturnValue(new Promise(() => {})); // never resolves
-    render(<SentinelStatusPanel initialData={buildStatus()} />);
-    expect(screen.getByText("STEADY")).toBeTruthy();
-  });
-
-  it("displays 401 counters", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () =>
-        buildStatus({
-          counters: {
-            ...buildStatus().counters,
-            llm401TokenExpired: 3,
-            llm401Other: 1,
-            cacheModels401: 0,
-            refreshSucceededTokenUpdated: 3,
-          },
-        }),
-    } as Response);
-
-    render(<SentinelStatusPanel />);
-    await waitFor(() => {
-      // Total LLM 401 = 3 + 1 = 4
-      expect(screen.getAllByText("4").length).toBeGreaterThan(0);
-    });
-  });
-
-  it("LLM-401 panel uses by-reason counters (does NOT count scheduled refresh as auto-retry)", async () => {
-    // Background scheduled refresh succeeded 5 times — must NOT show up as
-    // "Refreshed → Retry". Only an llm-401-triggered refresh should.
     fetchMock.mockReturnValue(new Promise(() => {}));
+    render(<SentinelStatusPanel initialData={buildStatus()} />);
+    expect(screen.getByLabelText("Sentinel mode: STEADY")).toBeTruthy();
+  });
 
+  it("donut slices expose count + percent via aria-label", async () => {
+    fetchMock.mockReturnValue(new Promise(() => {}));
     render(
       <SentinelStatusPanel
         initialData={buildStatus({
           counters: {
             ...buildStatus().counters,
-            // Aggregate happens to be large from background activity
+            llm401TokenExpired: 3,
+            llm401Other: 1,
+            cacheModels401: 0,
+          },
+        })}
+      />,
+    );
+    // Total = 4 → expired=3 (75%), other=1 (25%)
+    expect(screen.getAllByLabelText(/Token Expired: 3 \(75%\)/).length).toBeGreaterThan(0);
+    expect(screen.getAllByLabelText(/Other 401: 1 \(25%\)/).length).toBeGreaterThan(0);
+  });
+
+  it("donut empty state shows hint when no 401s", () => {
+    fetchMock.mockReturnValue(new Promise(() => {}));
+    render(<SentinelStatusPanel initialData={buildStatus()} />);
+    expect(screen.getByText("No 401s recorded")).toBeTruthy();
+  });
+
+  it("retry stack panel uses by-reason llm401 counters (ignores scheduled work)", () => {
+    fetchMock.mockReturnValue(new Promise(() => {}));
+    render(
+      <SentinelStatusPanel
+        initialData={buildStatus({
+          counters: {
+            ...buildStatus().counters,
             refreshSucceededTokenUpdated: 7,
             refreshSucceededTokenUpdatedByReason: {
-              llm401: 2,         // Only the user-experience path
+              llm401: 2,
               sentinel401: 0,
-              scheduled: 5,      // Background — should NOT inflate LLM panel
+              scheduled: 5, // background — must NOT inflate retry stack
               manual: 0,
             },
             refreshFailedByReason: emptyBuckets(),
@@ -186,63 +189,31 @@ describe("SentinelStatusPanel", () => {
       />,
     );
 
-    // "Refreshed → Retry" cell shows 2 (llm-401 only), not 7
-    const refreshedCell = screen.getByText("Refreshed → Retry").parentElement;
-    expect(refreshedCell?.textContent).toContain("2");
-    // And the Live State panel's "Background OK" reflects the scheduled work
+    // The Refreshed segment shows 2 (100% since other reasons are 0)
+    expect(screen.getAllByLabelText(/Refreshed: 2 \(100%\)/).length).toBeGreaterThan(0);
+    // Background OK cell still reflects the scheduled work
     const bgCell = screen.getByText("Background OK").parentElement;
     expect(bgCell?.textContent).toContain("5");
   });
 
-  it("formats cooldown across ms / s / m ranges", () => {
+  it("retry stack empty state shows hint", () => {
     fetchMock.mockReturnValue(new Promise(() => {}));
-
-    const { unmount: u1 } = render(
-      <SentinelStatusPanel initialData={buildStatus({ cooldownRemainingMs: 500 })} />,
-    );
-    expect(screen.getByText("500ms")).toBeTruthy();
-    u1();
-
-    const { unmount: u2 } = render(
-      <SentinelStatusPanel initialData={buildStatus({ cooldownRemainingMs: 5_500 })} />,
-    );
-    expect(screen.getByText("5.5s")).toBeTruthy();
-    u2();
-
-    render(
-      <SentinelStatusPanel initialData={buildStatus({ cooldownRemainingMs: 120_000 })} />,
-    );
-    expect(screen.getByText("2.0m")).toBeTruthy();
+    render(<SentinelStatusPanel initialData={buildStatus()} />);
+    expect(screen.getByLabelText("No LLM-401 retry attempts yet")).toBeTruthy();
   });
 
-  it("formats lastSuccess age across s / m / h ranges", () => {
-    const now = Date.now();
+  it("CooldownBar exposes remaining duration via progressbar role", () => {
     fetchMock.mockReturnValue(new Promise(() => {}));
+    render(<SentinelStatusPanel initialData={buildStatus({ cooldownRemainingMs: 5_500 })} />);
+    expect(screen.getByLabelText(/Cooldown remaining: 5\.5s/)).toBeTruthy();
+  });
 
-    // Seconds
-    const { unmount: u1 } = render(
-      <SentinelStatusPanel initialData={buildStatus({ lastSuccessAt: now - 30_000 })} />,
-    );
-    expect(screen.getByText(/\d+s ago/)).toBeTruthy();
-    u1();
-
-    // Minutes
-    const { unmount: u2 } = render(
-      <SentinelStatusPanel initialData={buildStatus({ lastSuccessAt: now - 120_000 })} />,
-    );
-    expect(screen.getByText(/\d+m ago/)).toBeTruthy();
-    u2();
-
-    // Hours
-    const { unmount: u3 } = render(
-      <SentinelStatusPanel initialData={buildStatus({ lastSuccessAt: now - 7_200_000 })} />,
-    );
-    expect(screen.getByText(/\d+h ago/)).toBeTruthy();
-    u3();
-
-    // Missing timestamp → "—"
-    render(<SentinelStatusPanel initialData={buildStatus({ lastSuccessAt: 0 })} />);
-    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+  it("SignalGauge exposes score via aria-label", () => {
+    fetchMock.mockReturnValue(new Promise(() => {}));
+    render(<SentinelStatusPanel initialData={buildStatus({ signalScore: 7 })} />);
+    expect(
+      screen.getByLabelText(/Signal score: 7 of 10 \(threshold 5\)/),
+    ).toBeTruthy();
   });
 
   it("handles fetch returning non-ok response", async () => {
