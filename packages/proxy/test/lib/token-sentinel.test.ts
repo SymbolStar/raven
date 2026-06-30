@@ -31,7 +31,10 @@ const {
   bootstrap,
   getRefreshCooldownRemaining,
   getLastRefreshInSeconds,
+  getSentinelStatus,
+  noteLlm401,
   _debugSnapshot,
+  _resetSentinelCountersForTest,
 } = await import("../../src/lib/token-sentinel")
 
 // ---------------------------------------------------------------------------
@@ -147,6 +150,7 @@ beforeEach(() => {
   cacheModelsMock.mockReset()
   cacheModelsMock.mockResolvedValue(undefined)
   _resetTokenSignalForTest()
+  _resetSentinelCountersForTest()
   harness = createFakeTimers()
 })
 
@@ -881,3 +885,92 @@ describe("PROBING state machine", () => {
   })
 })
 
+
+
+// ===========================================================================
+// Observability counters
+// ===========================================================================
+
+describe("getSentinelStatus / counters", () => {
+  test("initial state: counters all zero, mode null", () => {
+    const s = getSentinelStatus()
+    expect(s.mode).toBe(null)
+    expect(s.counters.refreshRequested).toEqual({
+      llm401: 0,
+      sentinel401: 0,
+      scheduled: 0,
+      manual: 0,
+    })
+    expect(s.counters.refreshUpstreamCalls).toBe(0)
+    expect(s.counters.refreshSucceededTokenUpdated).toBe(0)
+    expect(s.counters.refreshFailed).toBe(0)
+    expect(s.counters.llm401TokenExpired).toBe(0)
+    expect(s.counters.llm401Other).toBe(0)
+  })
+
+  test("counts each refresh reason separately", async () => {
+    startSentinel("tok-1", 1500)
+    // attemptedToken short-circuit (no upstream)
+    state.copilotToken = "fresh-tok"
+    await refreshNow("llm-401", "stale-tok")
+    let s = getSentinelStatus()
+    expect(s.counters.refreshRequested.llm401).toBe(1)
+    expect(s.counters.refreshShortCircuit).toBe(1)
+    expect(s.counters.refreshUpstreamCalls).toBe(0)
+
+    // min-interval block (still within 30s since bootstrap noteSuccess)
+    await refreshNow("manual")
+    s = getSentinelStatus()
+    expect(s.counters.refreshRequested.manual).toBe(1)
+    expect(s.counters.refreshBlockedByMinInterval).toBe(1)
+  })
+
+  test("counts upstream success + tokenUpdated", async () => {
+    startSentinel("tok-1", 1500)
+    getCopilotTokenMock.mockResolvedValueOnce({
+      token: "tok-2",
+      refresh_in: 1500,
+      expires_at: 9_999_999_999,
+    })
+    await harness.flushPending()
+    const s = getSentinelStatus()
+    expect(s.counters.refreshRequested.scheduled).toBe(1)
+    expect(s.counters.refreshUpstreamCalls).toBe(1)
+    expect(s.counters.refreshSucceededTokenUpdated).toBe(1)
+  })
+
+  test("counts upstream failure + cooldown blocks subsequent", async () => {
+    startSentinel("tok-1", 1500)
+    getCopilotTokenMock.mockRejectedValueOnce(new HTTPError("err", 500))
+    await harness.flushPending()
+    let s = getSentinelStatus()
+    expect(s.counters.refreshFailed).toBe(1)
+
+    // Subsequent refreshNow during cooldown → blocked
+    const r = await refreshNow("llm-401")
+    expect(r.ok).toBe(false)
+    s = getSentinelStatus()
+    expect(s.counters.refreshBlockedByCooldown).toBe(1)
+  })
+
+  test("noteLlm401 counters split by kind", () => {
+    noteLlm401("token-expired")
+    noteLlm401("token-expired")
+    noteLlm401("other-401")
+    const s = getSentinelStatus()
+    expect(s.counters.llm401TokenExpired).toBe(2)
+    expect(s.counters.llm401Other).toBe(1)
+  })
+
+  test("status exposes mode, cooldownRemainingMs, signalScore", () => {
+    startSentinel("tok-1", 1500)
+    tokenSignal.reportAuthFailure("token-expired")
+    tokenSignal.reportAuthFailure("other-401")
+    tokenSignal.reportAuthFailure("other-401")
+    const s = getSentinelStatus()
+    expect(s.mode).toBe("steady")
+    expect(s.signalScore).toBe(5)
+    expect(s.cooldownRemainingMs).toBe(0)
+    expect(s.consecutiveFailures).toBe(0)
+  })
+})

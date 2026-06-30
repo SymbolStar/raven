@@ -14,7 +14,7 @@ import {
 import { HTTPError } from "../lib/error"
 import { getProxyUrl } from "../lib/socks5-bridge"
 import { state } from "../lib/state"
-import { refreshNow } from "../lib/token-sentinel"
+import { refreshNow, noteLlm401 } from "../lib/token-sentinel"
 import { tokenSignal, isTokenExpiredBody } from "../lib/token-signal"
 import type { UpstreamClient, UpstreamResult } from "./interface"
 
@@ -74,6 +74,7 @@ export class CopilotResponsesClient
       const respBody = await response.text().catch(() => "")
       const tokenExpired = isTokenExpiredBody(401, respBody)
       tokenSignal.reportAuthFailure(tokenExpired ? "token-expired" : "other-401")
+      noteLlm401(tokenExpired ? "token-expired" : "other-401")
 
       if (!tokenExpired) {
         throw new HTTPError("Failed to create responses", 401, respBody)

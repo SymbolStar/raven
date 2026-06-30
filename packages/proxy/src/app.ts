@@ -18,6 +18,7 @@ import { createSettingsRoute } from "./routes/settings"
 import { createUpstreamsRoute } from "./routes/upstreams"
 import { createSocks5SettingsRoute } from "./routes/settings-socks5"
 import { createLiveRoute } from "./routes/live"
+import { createSentinelStatusRoute } from "./routes/sentinel-status"
 
 // ---------------------------------------------------------------------------
 // App factory — pure, synchronous, testable
@@ -94,6 +95,7 @@ export function createApp(deps: AppDeps): Hono {
   app.route("/api", createUpstreamsRoute(db))
   app.route("/api", createSocks5SettingsRoute(db))
   app.route("/api", createLiveRoute(db))
+  app.route("/api", createSentinelStatusRoute())
 
   return app
 }

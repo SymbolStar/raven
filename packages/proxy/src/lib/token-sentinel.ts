@@ -101,6 +101,123 @@ let generation = 0
 let dirtyAfterTick = false
 
 // ---------------------------------------------------------------------------
+// Observability counters
+//
+// 累积自进程启动以来的关键事件次数，供 dashboard / /api/sentinel-status
+// 端点读出，让 PR #129 修复在生产环境可观察。bootstrap/teardown 不重置
+// 这些计数器——它们是进程级累计值。
+// ---------------------------------------------------------------------------
+
+interface SentinelCounters {
+  /** refreshNow() 入口被调用的次数 (按 reason 分桶) */
+  refreshRequested: { llm401: number; sentinel401: number; scheduled: number; manual: number }
+  /** refreshNow 短路（attemptedToken 不匹配，未访问上游） */
+  refreshShortCircuit: number
+  /** refreshNow 命中 cooldown，被全局退避拦回 */
+  refreshBlockedByCooldown: number
+  /** refreshNow 命中 min-interval，未访问上游 */
+  refreshBlockedByMinInterval: number
+  /** 真正访问了上游的 getCopilotToken（无论成功失败）次数 */
+  refreshUpstreamCalls: number
+  /** 上游访问成功且确实换了 token */
+  refreshSucceededTokenUpdated: number
+  /** 上游访问成功但 token 字面没变（refresh_in 续期类） */
+  refreshSucceededTokenSame: number
+  /** 上游访问失败次数 */
+  refreshFailed: number
+  /** stale generation 路径（旧 loop inflight 被丢弃） */
+  refreshDiscardedStale: number
+  /** LLM 路径上报的 401 — token-expired 文案命中 */
+  llm401TokenExpired: number
+  /** LLM 路径上报的 401 — 非 token-expired */
+  llm401Other: number
+  /** sentinel-401 (cacheModels 撞 401) 次数 */
+  cacheModels401: number
+  /** sentinel 进入 PROBING 模式的次数 */
+  probingEntered: number
+}
+
+const counters: SentinelCounters = {
+  refreshRequested: { llm401: 0, sentinel401: 0, scheduled: 0, manual: 0 },
+  refreshShortCircuit: 0,
+  refreshBlockedByCooldown: 0,
+  refreshBlockedByMinInterval: 0,
+  refreshUpstreamCalls: 0,
+  refreshSucceededTokenUpdated: 0,
+  refreshSucceededTokenSame: 0,
+  refreshFailed: 0,
+  refreshDiscardedStale: 0,
+  llm401TokenExpired: 0,
+  llm401Other: 0,
+  cacheModels401: 0,
+  probingEntered: 0,
+}
+
+function incRefreshRequested(reason: RefreshReason): void {
+  switch (reason) {
+    case "llm-401":      counters.refreshRequested.llm401 += 1; break
+    case "sentinel-401": counters.refreshRequested.sentinel401 += 1; break
+    case "scheduled":    counters.refreshRequested.scheduled += 1; break
+    case "manual":       counters.refreshRequested.manual += 1; break
+  }
+}
+
+/** External: report an llm-side 401 outcome (called by upstream clients). */
+export function noteLlm401(kind: "token-expired" | "other-401"): void {
+  if (kind === "token-expired") counters.llm401TokenExpired += 1
+  else counters.llm401Other += 1
+}
+
+/** External: snapshot all counters + current state. Used by status endpoint. */
+export function getSentinelStatus(): {
+  generation: number
+  mode: SentinelState["mode"] | null
+  cooldownRemainingMs: number
+  consecutiveFailures: number
+  forceSteadyAfterCooldown: boolean
+  lastRefreshInSeconds: number | null
+  lastSuccessAt: number
+  hasInflight: boolean
+  pendingTimer: boolean
+  signalScore: number
+  counters: SentinelCounters
+} {
+  return {
+    generation,
+    mode: sentinelState?.mode ?? null,
+    cooldownRemainingMs: getRefreshCooldownRemaining(),
+    consecutiveFailures,
+    forceSteadyAfterCooldown,
+    lastRefreshInSeconds,
+    lastSuccessAt,
+    hasInflight: inflight !== null,
+    pendingTimer: pendingTimeoutHandle !== null,
+    signalScore: tokenSignal.readScore(),
+    counters: {
+      ...counters,
+      refreshRequested: { ...counters.refreshRequested },
+    },
+  }
+}
+
+/** Test-only: reset all observability counters. Production never calls this. */
+export function _resetSentinelCountersForTest(): void {
+  counters.refreshRequested = { llm401: 0, sentinel401: 0, scheduled: 0, manual: 0 }
+  counters.refreshShortCircuit = 0
+  counters.refreshBlockedByCooldown = 0
+  counters.refreshBlockedByMinInterval = 0
+  counters.refreshUpstreamCalls = 0
+  counters.refreshSucceededTokenUpdated = 0
+  counters.refreshSucceededTokenSame = 0
+  counters.refreshFailed = 0
+  counters.refreshDiscardedStale = 0
+  counters.llm401TokenExpired = 0
+  counters.llm401Other = 0
+  counters.cacheModels401 = 0
+  counters.probingEntered = 0
+}
+
+// ---------------------------------------------------------------------------
 // Bookkeeping helpers
 // ---------------------------------------------------------------------------
 
@@ -229,6 +346,7 @@ function scheduleNext(
       // Fresh entry into PROBING
       s.mode = "probing"
       s.remainingProbeTicks = PROBE_TICKS
+      counters.probingEntered += 1
     } else if (s.mode === "probing") {
       // Hard upper bound: tick budget decrements regardless of score.
       // Only a NEW signal arriving during PROBING refreshes the budget.
@@ -308,6 +426,7 @@ async function sentinelTick(s: SentinelState, timers: TimerFactory): Promise<voi
       } catch (e) {
         if (s !== sentinelState || timers !== activeTimers) return
         if (isAuthError(e)) {
+          counters.cacheModels401 += 1
           await refreshNow("sentinel-401", undefined, { fromSentinelTick: true })
           if (s !== sentinelState || timers !== activeTimers) return
           // 本 tick 不递归 cacheModels
@@ -356,8 +475,11 @@ export async function refreshNow(
   attemptedToken?: string,
   opts: RefreshNowOptions = {},
 ): Promise<RefreshResult> {
+  incRefreshRequested(reason)
+
   // 1. 短路：state 已比 caller 用的更新 → 让 caller 重试
   if (attemptedToken && state.copilotToken !== attemptedToken) {
+    counters.refreshShortCircuit += 1
     return { ok: true, tokenWasUpdated: true, refreshInSeconds: null }
   }
 
@@ -367,6 +489,7 @@ export async function refreshNow(
   // 3. 失败冷却：拒绝调用、报告剩余冷却
   const cooldownLeft = getRefreshCooldownRemaining()
   if (cooldownLeft > 0) {
+    counters.refreshBlockedByCooldown += 1
     return {
       ok: false,
       error: new Error("refresh in cooldown"),
@@ -384,6 +507,7 @@ export async function refreshNow(
   if (reason !== "sentinel-401") {
     const sinceLast = Date.now() - lastSuccessAt
     if (sinceLast < MIN_REFRESH_INTERVAL_MS && lastSuccessAt > 0) {
+      counters.refreshBlockedByMinInterval += 1
       return { ok: true, tokenWasUpdated: false, refreshInSeconds: null }
     }
   }
@@ -396,10 +520,12 @@ export async function refreshNow(
   inflight = (async (): Promise<RefreshResult> => {
     try {
       const oldToken = state.copilotToken
+      counters.refreshUpstreamCalls += 1
       const { token, refresh_in } = await getCopilotToken()
 
       // generation 校验：旧 loop 飞行刷新被废弃
       if (myGeneration !== generation) {
+        counters.refreshDiscardedStale += 1
         logger.debug("refreshNow result discarded (stale generation)", {
           reason,
           myGeneration,
@@ -410,14 +536,18 @@ export async function refreshNow(
 
       state.copilotToken = token // I-1 唯一写入点
       noteSuccess(refresh_in)
+      const tokenWasUpdated = token !== oldToken
+      if (tokenWasUpdated) counters.refreshSucceededTokenUpdated += 1
+      else counters.refreshSucceededTokenSame += 1
       return {
         ok: true,
-        tokenWasUpdated: token !== oldToken,
+        tokenWasUpdated,
         refreshInSeconds: refresh_in,
       }
     } catch (error) {
       // generation 校验：旧 loop 失败不该影响新 loop cooldown
       if (myGeneration !== generation) {
+        counters.refreshDiscardedStale += 1
         logger.debug("refreshNow failure discarded (stale generation)", {
           reason,
           error: String(error),
@@ -428,6 +558,7 @@ export async function refreshNow(
           cooldownMs: 0,
         }
       }
+      counters.refreshFailed += 1
       const cooldownMs = noteFailure()
       logger.error("refreshNow failed", {
         reason,
