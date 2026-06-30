@@ -30,6 +30,8 @@ export default defineConfig({
         "src/app/overview-charts.tsx",
         "src/app/analytics-charts.tsx",
         "src/app/models/model-explorer.tsx",
+        // Sentinel viz subcomponents (recharts + SVG wrappers, no logic)
+        "src/app/sentinel/**",
         // Render-heavy "use client" content pages (UI-dominant, test via E2E)
         "src/app/login/**",
         "src/app/logs/logs-content.tsx",
