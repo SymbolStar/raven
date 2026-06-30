@@ -50,25 +50,6 @@ function toPositiveInt(v: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
 }
 
-// Pre-compiled regex: matches Copilot dot-notation model IDs.
-// e.g. "claude-opus-4.6" → "claude-opus-4-6", "claude-sonnet-4.5-1m" → "claude-sonnet-4-5-1m"
-const COPILOT_DOT_MODEL_RE = /^(claude-(?:opus|sonnet|haiku)-\d+)\.(\d+)(.*)/
-
-/**
- * Reverse-translate a Copilot model ID (dot-separated minor version) back to
- * the Anthropic SDK canonical format (hyphen-separated).
- *
- * Copilot catalogs use IDs like `claude-opus-4.6`, `claude-sonnet-4.5-1m`.
- * Anthropic SDK / Claude Code expects `claude-opus-4-6`, `claude-sonnet-4-5-1m`.
- *
- * Non-matching IDs (e.g. "gpt-4o", "gemini-2.0-flash") pass through unchanged.
- */
-export function copilotIdToSdkId(id: string): string {
-  const m = COPILOT_DOT_MODEL_RE.exec(id)
-  if (!m) return id
-  return `${m[1]}-${m[2]}${m[3]}`
-}
-
 /**
  * Fetch models from an upstream provider that supports /v1/models.
  * Returns model info with context limits on success, empty array on failure.
@@ -131,14 +112,13 @@ modelRoutes.get("/", async (c) => {
       await cacheModels()
     }
 
-    // Collect all model IDs (in SDK format) to avoid duplicates
-    const seenModelIds = new Set(state.models?.data.map((m) => copilotIdToSdkId(m.id)) ?? [])
+    // Collect all model IDs to avoid duplicates
+    const seenModelIds = new Set(state.models?.data.map((m) => m.id) ?? [])
 
     // Map Copilot models to response format
     const models: ModelEntry[] = state.models?.data.map((model) => {
-      const sdkId = copilotIdToSdkId(model.id)
       const base: ModelEntry = {
-        id: sdkId,
+        id: model.id,
         object: "model",
         type: "model",
         created: 0, // No date available from source
