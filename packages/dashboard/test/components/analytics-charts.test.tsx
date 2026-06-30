@@ -6,32 +6,9 @@ import { render, screen } from "@testing-library/react";
 // Mock recharts to avoid ResizeObserver + canvas issues in jsdom
 // ---------------------------------------------------------------------------
 
-vi.mock("recharts", () => {
-  const React = require("react");
-  const MockResponsiveContainer = ({ children }: { children: React.ReactNode }) =>
-    React.createElement("div", { "data-testid": "responsive-container" }, children);
-  const MockChart = ({ children, data }: { children: React.ReactNode; data?: unknown[] }) =>
-    React.createElement("div", { "data-testid": "chart", "data-points": String(data?.length ?? 0) }, children);
-  // Render children for components that accept them (Legend renders display labels)
-  const MockWithChildren = ({ children, ...props }: { children?: React.ReactNode; [k: string]: unknown }) =>
-    React.createElement("div", { "data-testid": "chart-element", "data-name": props.name || props.dataKey || "" }, children);
-  const MockElement = (props: { name?: string; dataKey?: string }) =>
-    React.createElement("span", { "data-testid": "chart-leaf", "data-key": props.dataKey ?? props.name ?? "" });
-
-  return {
-    AreaChart: MockChart,
-    Area: MockElement,
-    BarChart: MockChart,
-    Bar: MockElement,
-    LineChart: MockChart,
-    Line: MockElement,
-    XAxis: MockElement,
-    YAxis: MockElement,
-    CartesianGrid: MockElement,
-    Tooltip: MockWithChildren,
-    ResponsiveContainer: MockResponsiveContainer,
-    Legend: MockElement,
-  };
+vi.mock("recharts", async () => {
+  const { rechartsMockFactory } = await import("../helpers/recharts-mock");
+  return rechartsMockFactory();
 });
 
 // ---------------------------------------------------------------------------
