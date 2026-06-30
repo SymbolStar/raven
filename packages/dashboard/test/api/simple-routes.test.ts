@@ -615,3 +615,67 @@ describe("GET /api/upstreams/[id]/models", () => {
     expect(res.status).toBe(404);
   });
 });
+
+// ===========================================================================
+// GET /api/sentinel-status
+// ===========================================================================
+
+describe("GET /api/sentinel-status", () => {
+  it("success → returns JSON with 200", async () => {
+    const data = {
+      generation: 1,
+      mode: "steady",
+      cooldownRemainingMs: 0,
+      consecutiveFailures: 0,
+      forceSteadyAfterCooldown: false,
+      lastRefreshInSeconds: 1500,
+      lastSuccessAt: 123456,
+      hasInflight: false,
+      pendingTimer: true,
+      signalScore: 0,
+      counters: {
+        refreshRequested: { llm401: 0, sentinel401: 0, scheduled: 0, manual: 0 },
+        refreshShortCircuit: 0,
+        refreshBlockedByCooldown: 0,
+        refreshBlockedByMinInterval: 0,
+        refreshUpstreamCalls: 0,
+        refreshSucceededTokenUpdated: 0,
+        refreshSucceededTokenSame: 0,
+        refreshFailed: 0,
+        refreshDiscardedStale: 0,
+        llm401TokenExpired: 0,
+        llm401Other: 0,
+        cacheModels401: 0,
+        probingEntered: 0,
+      },
+    };
+    mockProxyFetch.mockResolvedValueOnce(data);
+
+    const { GET } = await import("@/app/api/sentinel-status/route");
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(data);
+    expect(mockProxyFetch).toHaveBeenCalledWith("/api/sentinel-status");
+  });
+
+  it("ProxyError → status code propagated", async () => {
+    mockProxyFetch.mockRejectedValueOnce(new ProxyError("Bad Gateway", 502));
+
+    const { GET } = await import("@/app/api/sentinel-status/route");
+    const res = await GET();
+
+    expect(res.status).toBe(502);
+  });
+
+  it("generic Error → 502 with message", async () => {
+    mockProxyFetch.mockRejectedValueOnce(new Error("network down"));
+
+    const { GET } = await import("@/app/api/sentinel-status/route");
+    const res = await GET();
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.error).toBe("network down");
+  });
+});

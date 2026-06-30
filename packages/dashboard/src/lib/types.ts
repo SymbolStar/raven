@@ -357,3 +357,42 @@ export interface UpstreamModelsResponse {
 }
 
 
+
+// ---------------------------------------------------------------------------
+// SentinelStatus — token-refresh observability (see docs/23-token-sentinel.md)
+// ---------------------------------------------------------------------------
+
+export interface SentinelCounters {
+  refreshRequested: {
+    llm401: number;
+    sentinel401: number;
+    scheduled: number;
+    manual: number;
+  };
+  refreshShortCircuit: number;
+  refreshBlockedByCooldown: number;
+  refreshBlockedByMinInterval: number;
+  refreshUpstreamCalls: number;
+  refreshSucceededTokenUpdated: number;
+  refreshSucceededTokenSame: number;
+  refreshFailed: number;
+  refreshDiscardedStale: number;
+  llm401TokenExpired: number;
+  llm401Other: number;
+  cacheModels401: number;
+  probingEntered: number;
+}
+
+export interface SentinelStatus {
+  generation: number;
+  mode: "steady" | "probing" | null;
+  cooldownRemainingMs: number;
+  consecutiveFailures: number;
+  forceSteadyAfterCooldown: boolean;
+  lastRefreshInSeconds: number | null;
+  lastSuccessAt: number;
+  hasInflight: boolean;
+  pendingTimer: boolean;
+  signalScore: number;
+  counters: SentinelCounters;
+}
