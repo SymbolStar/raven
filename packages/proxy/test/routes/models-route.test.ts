@@ -2,7 +2,7 @@ import { describe, expect, test, beforeEach, afterEach, vi } from "vitest"
 import { Hono } from "hono"
 
 import { state } from "../../src/lib/state"
-import { modelRoutes } from "../../src/routes/models/route"
+import { modelRoutes, copilotIdToSdkId } from "../../src/routes/models/route"
 import type { ProviderRecord } from "../../src/db/providers"
 import { compileProvider } from "../../src/db/providers"
 
@@ -550,7 +550,8 @@ describe("GET /v1/models (route wrapper)", () => {
         }
       }>
     }
-    const claude = json.data.find(m => m.id === "claude-opus-4.7")
+    // Copilot dot-format "claude-opus-4.7" → SDK hyphen-format "claude-opus-4-7"
+    const claude = json.data.find(m => m.id === "claude-opus-4-7")
     expect(claude).toBeDefined()
     expect(claude!.supported_endpoints).toEqual(["/v1/messages", "/chat/completions"])
     expect(claude!.capabilities?.supports?.reasoning_effort).toEqual(["low", "medium", "high"])
@@ -663,5 +664,95 @@ describe("GET /v1/models (route wrapper)", () => {
     expect(res.status).toBe(200)
     const json = (await res.json()) as { data: Array<{ id: string; owned_by: string }> }
     expect(json.data.find((m) => m.id === "auto")?.owned_by).toBe("Manifest")
+  })
+})
+
+// ===========================================================================
+// copilotIdToSdkId — unit tests
+// ===========================================================================
+
+describe("copilotIdToSdkId", () => {
+  // --- Claude Opus variants ---
+  test("claude-opus-4.6 → claude-opus-4-6", () => {
+    expect(copilotIdToSdkId("claude-opus-4.6")).toBe("claude-opus-4-6")
+  })
+
+  test("claude-opus-4.7 → claude-opus-4-7", () => {
+    expect(copilotIdToSdkId("claude-opus-4.7")).toBe("claude-opus-4-7")
+  })
+
+  test("claude-opus-4.8 → claude-opus-4-8", () => {
+    expect(copilotIdToSdkId("claude-opus-4.8")).toBe("claude-opus-4-8")
+  })
+
+  test("claude-opus-4.5 → claude-opus-4-5", () => {
+    expect(copilotIdToSdkId("claude-opus-4.5")).toBe("claude-opus-4-5")
+  })
+
+  // --- Claude Opus with suffix ---
+  test("claude-opus-4.6-1m → claude-opus-4-6-1m", () => {
+    expect(copilotIdToSdkId("claude-opus-4.6-1m")).toBe("claude-opus-4-6-1m")
+  })
+
+  test("claude-opus-4.7-1m-internal → claude-opus-4-7-1m-internal", () => {
+    expect(copilotIdToSdkId("claude-opus-4.7-1m-internal")).toBe("claude-opus-4-7-1m-internal")
+  })
+
+  test("claude-opus-4.6-fast → claude-opus-4-6-fast", () => {
+    expect(copilotIdToSdkId("claude-opus-4.6-fast")).toBe("claude-opus-4-6-fast")
+  })
+
+  // --- Claude Sonnet variants ---
+  test("claude-sonnet-4.5 → claude-sonnet-4-5", () => {
+    expect(copilotIdToSdkId("claude-sonnet-4.5")).toBe("claude-sonnet-4-5")
+  })
+
+  test("claude-sonnet-4.6 → claude-sonnet-4-6", () => {
+    expect(copilotIdToSdkId("claude-sonnet-4.6")).toBe("claude-sonnet-4-6")
+  })
+
+  test("claude-sonnet-4.5-1m → claude-sonnet-4-5-1m", () => {
+    expect(copilotIdToSdkId("claude-sonnet-4.5-1m")).toBe("claude-sonnet-4-5-1m")
+  })
+
+  // --- Claude Haiku ---
+  test("claude-haiku-4.5 → claude-haiku-4-5", () => {
+    expect(copilotIdToSdkId("claude-haiku-4.5")).toBe("claude-haiku-4-5")
+  })
+
+  // --- Non-Claude models pass through unchanged ---
+  test("gpt-4o → gpt-4o (unchanged)", () => {
+    expect(copilotIdToSdkId("gpt-4o")).toBe("gpt-4o")
+  })
+
+  test("gemini-2.0-flash → gemini-2.0-flash (unchanged, not claude-)", () => {
+    expect(copilotIdToSdkId("gemini-2.0-flash")).toBe("gemini-2.0-flash")
+  })
+
+  test("o4-mini → o4-mini (unchanged)", () => {
+    expect(copilotIdToSdkId("o4-mini")).toBe("o4-mini")
+  })
+
+  test("deepseek-v3 → deepseek-v3 (unchanged)", () => {
+    expect(copilotIdToSdkId("deepseek-v3")).toBe("deepseek-v3")
+  })
+
+  // --- Already hyphen-format passes through ---
+  test("claude-opus-4-6 → claude-opus-4-6 (already SDK format)", () => {
+    expect(copilotIdToSdkId("claude-opus-4-6")).toBe("claude-opus-4-6")
+  })
+
+  test("claude-sonnet-4-5-20250929 → unchanged (no dot)", () => {
+    expect(copilotIdToSdkId("claude-sonnet-4-5-20250929")).toBe("claude-sonnet-4-5-20250929")
+  })
+
+  // --- No minor version (e.g. claude-opus-4) unchanged ---
+  test("claude-opus-4 → claude-opus-4 (no minor, no dot)", () => {
+    expect(copilotIdToSdkId("claude-opus-4")).toBe("claude-opus-4")
+  })
+
+  // --- Edge: multi-digit minor ---
+  test("claude-opus-5.12 → claude-opus-5-12", () => {
+    expect(copilotIdToSdkId("claude-opus-5.12")).toBe("claude-opus-5-12")
   })
 })
