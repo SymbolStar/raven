@@ -62,4 +62,22 @@ describe("useRingBuffer", () => {
     });
     expect(renders - before).toBe(2);
   });
+
+  it("returns a stable object reference across rerenders (safe as useEffect dep)", () => {
+    const { result, rerender } = renderHook(() => useRingBuffer<number>(3));
+    const first = result.current;
+    rerender();
+    const second = result.current;
+    expect(second).toBe(first);
+
+    // Even after a push (which causes its own rerender), the identity
+    // stays the same — only the snapshot contents change.
+    act(() => {
+      result.current.push(1);
+    });
+    const third = result.current;
+    expect(third).toBe(first);
+    expect(third.push).toBe(first.push);
+    expect(third.snapshot).toBe(first.snapshot);
+  });
 });

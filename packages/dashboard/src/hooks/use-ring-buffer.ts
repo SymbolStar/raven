@@ -1,4 +1,4 @@
-import { useCallback, useReducer, useRef } from "react";
+import { useCallback, useMemo, useReducer, useRef } from "react";
 
 export interface RingBuffer<T> {
   /** Append a value; drops oldest if over capacity. Triggers a rerender. */
@@ -33,5 +33,8 @@ export function useRingBuffer<T>(maxLen: number): RingBuffer<T> {
 
   const snapshot = useCallback(() => ref.current.slice(), []);
 
-  return { push, snapshot };
+  // Stable identity so callers can list the buffer as a useEffect dep
+  // without retriggering the effect on every rerender. push / snapshot
+  // are already useCallback'd above.
+  return useMemo(() => ({ push, snapshot }), [push, snapshot]);
 }
