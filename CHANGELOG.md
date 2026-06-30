@@ -1,5 +1,65 @@
 # Changelog
 
+## v2.3.8
+
+### Added
+- SentinelStatusPanel as orchestrator over 3 viz panels
+- Sentinel viz subcomponents (donut/bar/live-state)
+- SENTINEL_SLICE_COLORS / SENTINEL_STACK_COLORS
+- Sentinel-derive pure helpers (slices/stacks/format)
+- UseRingBuffer hook for bounded FIFO history
+- Reason-bucketed success/fail counters + UI fix (phase 3 obs.5)
+- SentinelStatusPanel on overview page (phase 3 obs.4)
+- Add /api/sentinel-status BFF route + SentinelStatus types (phase 3 obs.3)
+- Observability counters + GET /api/sentinel-status (phase 3 obs.2)
+- 4 Copilot clients adopt snapshotAuth + 401 wait-retry (phase 2.4)
+- Replace token-signal no-op with full implementation (phase 2.2)
+- Add copilotHeadersForToken atomic helper (phase 2.1)
+- SetupCopilotToken delegates to sentinel; remove legacy refresh (phase 1.4)
+- Add token-sentinel.ts core + tests (phase 1.3)
+- Add token-signal.ts no-op placeholder (phase 1)
+- Extend TimerFactory with clearTimeout
+
+### Changed
+- Wrap Copilot models tables in bg-secondary surface
+- Record dot-vs-hyphen passthrough decision in 3 places
+- Sentinel cards equal-height with content-filled layout
+- Shared recharts mock helper (covers Pie/Cell)
+- Extract Sparkline to components/charts
+- Complete 401 retry matrix for native / responses / embeddings (phase 3.5)
+- Activate PROBING state machine tests (phase 2.3)
+- Clarify copilotHeaders null-token behavior delta
+- Narrow I-2 to refreshNow path, add snapshotAuth token guard
+- SnapshotAuth header helper, setup re-entry stop, TimerFactory, phase split, test fixes
+- Per-call rearm flag + cross-source forceSteadyAfterCooldown
+- Generation epochs, PROBING-cooldown deadlock guard, fatal unified path
+- Tick re-entry guard, bootstrap dedup, snapshotAuth fixture parity
+- Active timer rearm + cooldown full silence + unified bootstrap
+- Unify refresh cooldown across triggers, snapshotAuth atomicity
+- Restore retry backoff + refresh_in repick, fix decay order
+- Tighten Token Sentinel design — scheduled refresh + concurrent-tail fix
+- Add Token Sentinel design — single-writer refresh with await+retry
+- Upgrade lucide-react 1.21.0 → 1.22.0
+- Upgrade eslint 10.5.0 → 10.6.0
+- Bump dependency-cruiser to 18.0.0 in root
+- Bump @types/node to 26.0.1 in dashboard
+- Bump vite to 8.1.0 in root
+- Bump recharts to 3.9.0 in dashboard
+- Bump hono to 4.12.27 in root and proxy
+- Bump @vitejs/plugin-react to 6.0.3 in dashboard
+- Bump @playwright/test to 1.61.1 in dashboard
+
+### Fixed
+- Stabilize useRingBuffer return identity (poll storm)
+- Stale tick guards prevent dead loop from writing global state (phase 3.4)
+- Sentinel-401 bypasses min-interval for post-refresh validation (phase 3.3)
+- Cap score + bound PROBING by tick budget (phase 3.2)
+- Clear pending timer in scheduleNext to prevent orphaned race
+
+### Removed
+- Drop sentinel panel-title icons (page-consistency)
+- CopilotHeadersForToken type widen, drop stale I-2 wording
+
 ## v2.3.7
 
 ### Fixed
