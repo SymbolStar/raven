@@ -182,3 +182,29 @@ export const MODEL_TOP_N = 8;
 export const ANIMATION_PROPS = {
   isAnimationActive: false,
 } as const;
+
+/**
+ * Sentinel donut slice colors (401 occurrences panel).
+ *
+ * Note: "expired" is mapped to the success palette because token
+ * expiration is the recoverable, expected path — the auto-retry covers
+ * it. "Other" 401s indicate something the proxy cannot fix → danger.
+ */
+export const SENTINEL_SLICE_COLORS = {
+  expired: CHART_COLORS.success,
+  other: CHART_COLORS.danger,
+  cacheModels: CHART_COLORS.muted,
+} as const;
+
+/**
+ * Sentinel auto-retry stacked-bar colors (LLM-401 path).
+ * Index-ordered so a stacked recharts <Bar> can map directly.
+ */
+export const SENTINEL_STACK_COLORS = {
+  refreshed: CHART_COLORS.success,
+  same: CHART_COLORS.muted,
+  failed: CHART_COLORS.danger,
+  shortCircuit: CHART_COLORS.warning,
+  cooldown: CHART_COLORS.warning,
+  minInterval: CHART_COLORS.muted,
+} as const;
