@@ -9,6 +9,8 @@ import {
   cacheOptimizations,
   cacheProviders,
   cacheIPWhitelist,
+  cacheCorsSettings,
+  cacheSocks5Settings,
   isNullish,
   sleep,
 } from "../../src/lib/utils"
@@ -575,5 +577,101 @@ describe("cacheProviders with invalid model_patterns", () => {
     expect(state.providers).toHaveLength(1)
 
     loggerSpy.mockRestore()
+  })
+})
+
+// ===========================================================================
+// cacheCorsSettings
+// ===========================================================================
+
+describe("cacheCorsSettings", () => {
+  test("enabled flag + parsed array of allowed origins", () => {
+    db.query("INSERT INTO settings (key, value) VALUES ($k, $v)").run({
+      $k: "cors_enabled",
+      $v: "true",
+    })
+    db.query("INSERT INTO settings (key, value) VALUES ($k, $v)").run({
+      $k: "cors_allowed_origins",
+      $v: JSON.stringify(["https://example.com", "https://app.example.com"]),
+    })
+
+    cacheCorsSettings(db)
+
+    expect(state.corsEnabled).toBe(true)
+    expect(state.corsAllowedOrigins).toEqual([
+      "https://example.com",
+      "https://app.example.com",
+    ])
+  })
+
+  test("non-array JSON resets allowed origins to []", () => {
+    db.query("INSERT INTO settings (key, value) VALUES ($k, $v)").run({
+      $k: "cors_allowed_origins",
+      $v: JSON.stringify({ not: "an array" }),
+    })
+
+    cacheCorsSettings(db)
+    expect(state.corsAllowedOrigins).toEqual([])
+  })
+
+  test("invalid JSON catch keeps allowed origins as []", () => {
+    db.query("INSERT INTO settings (key, value) VALUES ($k, $v)").run({
+      $k: "cors_allowed_origins",
+      $v: "not-valid-json{{{",
+    })
+
+    cacheCorsSettings(db)
+    expect(state.corsAllowedOrigins).toEqual([])
+  })
+
+  test("missing setting resets allowed origins to []", () => {
+    cacheCorsSettings(db)
+    expect(state.corsEnabled).toBe(false)
+    expect(state.corsAllowedOrigins).toEqual([])
+  })
+})
+
+// ===========================================================================
+// cacheSocks5Settings
+// ===========================================================================
+
+describe("cacheSocks5Settings", () => {
+  test("reads host/port/username/password + copilot policy from DB", () => {
+    const rows: Array<[string, string]> = [
+      ["socks5_enabled", "true"],
+      ["socks5_host", "127.0.0.1"],
+      ["socks5_port", "1080"],
+      ["socks5_username", "u"],
+      ["socks5_password", "p"],
+      ["socks5_copilot", "on"],
+    ]
+    for (const [k, v] of rows) {
+      db.query("INSERT INTO settings (key, value) VALUES ($k, $v)").run({ $k: k, $v: v })
+    }
+
+    cacheSocks5Settings(db)
+    expect(state.socks5Enabled).toBe(true)
+    expect(state.socks5Host).toBe("127.0.0.1")
+    expect(state.socks5Port).toBe(1080)
+    expect(state.socks5Username).toBe("u")
+    expect(state.socks5Password).toBe("p")
+    expect(state.socks5CopilotPolicy).toBe("on")
+  })
+
+  test("unknown copilot policy falls back to 'default'", () => {
+    db.query("INSERT INTO settings (key, value) VALUES ($k, $v)").run({
+      $k: "socks5_copilot",
+      $v: "weird",
+    })
+    cacheSocks5Settings(db)
+    expect(state.socks5CopilotPolicy).toBe("default")
+  })
+
+  test("missing settings → null host / null port / 'default' copilot policy", () => {
+    cacheSocks5Settings(db)
+    expect(state.socks5Enabled).toBe(false)
+    expect(state.socks5Host).toBeNull()
+    expect(state.socks5Port).toBeNull()
+    expect(state.socks5CopilotPolicy).toBe("default")
   })
 })
