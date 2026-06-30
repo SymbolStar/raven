@@ -68,8 +68,8 @@ export const RetryBar = memo(function RetryBar({ stacks }: RetryBarProps) {
   for (const s of segments) row[s.key] = s.value;
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="h-[44px]">
+    <div className="flex flex-col gap-3 h-full">
+      <div className="flex-1 min-h-[60px] flex items-center">
         {isEmpty ? (
           <div
             className="h-full w-full rounded-md bg-muted/40 flex items-center justify-center"
@@ -81,7 +81,8 @@ export const RetryBar = memo(function RetryBar({ stacks }: RetryBarProps) {
             </span>
           </div>
         ) : (
-          <ResponsiveContainer {...RESPONSIVE_CONTAINER_PROPS}>
+          <div className="w-full h-[44px]">
+            <ResponsiveContainer {...RESPONSIVE_CONTAINER_PROPS}>
             <BarChart
               layout="vertical"
               data={[row]}
@@ -114,10 +115,11 @@ export const RetryBar = memo(function RetryBar({ stacks }: RetryBarProps) {
               })}
             </BarChart>
           </ResponsiveContainer>
+          </div>
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 shrink-0">
         {segments.map((s) => {
           const pct = computePercent(s.value, total);
           return (

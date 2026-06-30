@@ -61,8 +61,8 @@ export const OccurrencesDonut = memo(function OccurrencesDonut({
     : slices.map((s) => ({ ...s, _total: total }));
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="relative h-[140px]">
+    <div className="flex flex-col gap-3 h-full">
+      <div className="relative flex-1 min-h-[160px]">
         <ResponsiveContainer {...RESPONSIVE_CONTAINER_PROPS}>
           <PieChart>
             <Pie
@@ -100,7 +100,7 @@ export const OccurrencesDonut = memo(function OccurrencesDonut({
         </div>
       </div>
 
-      <div className="space-y-1">
+      <div className="space-y-1 shrink-0">
         {isEmpty ? (
           <p className="text-meta text-muted-foreground text-center">
             No 401s recorded

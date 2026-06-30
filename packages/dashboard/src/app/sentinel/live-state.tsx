@@ -194,19 +194,19 @@ export const LiveState = memo(function LiveState({
   bgRefreshFailed,
 }: LiveStateProps) {
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
+    <div className="flex flex-col gap-3 h-full justify-between">
+      <div className="flex items-center justify-between gap-3 shrink-0">
         <ModeBadge mode={status.mode} />
         <Sparkline data={signalHistory} />
       </div>
 
-      <div className="flex justify-center">
+      <div className="flex justify-center flex-1 items-center min-h-0">
         <SignalGauge score={status.signalScore} />
       </div>
 
       <CooldownBar remainingMs={status.cooldownRemainingMs} />
 
-      <div className="grid grid-cols-2 gap-x-3 gap-y-2 pt-1">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-2 pt-1 shrink-0">
         <Cell
           label="Consecutive Fails"
           value={status.consecutiveFailures}
