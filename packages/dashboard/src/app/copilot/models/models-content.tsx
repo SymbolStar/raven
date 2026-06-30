@@ -173,65 +173,67 @@ export function CopilotModelsContent({ data }: CopilotModelsContentProps) {
             <Badge variant="secondary">{models.length}</Badge>
           </div>
 
-          <Table className="table-fixed">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[22%]">Model ID</TableHead>
-                <TableHead className="hidden sm:table-cell w-[15%]">Name</TableHead>
-                <TableHead className="hidden xl:table-cell w-[8%]">Version</TableHead>
-                <TableHead className="hidden xl:table-cell w-[11%]">Family</TableHead>
-                <TableHead className="hidden md:table-cell w-[7%]">Type</TableHead>
-                <TableHead className="w-[11%] text-right">Context</TableHead>
-                <TableHead className="hidden sm:table-cell w-[10%] text-right">Max Output</TableHead>
-                <TableHead className="hidden lg:table-cell w-[8%]">Picker</TableHead>
-                <TableHead className="hidden lg:table-cell w-[8%]">Preview</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {models.map((model, i) => (
-                <TableRow key={`${model.id}-${i}`}>
-                  <TableCell className="truncate">
-                    <span className="inline-flex items-center gap-1.5 max-w-full">
-                      <span className="font-mono text-xs truncate">{model.id}</span>
-                      <CopyButton text={model.id} />
-                    </span>
-                  </TableCell>
-                  <TableCell className="hidden sm:table-cell font-medium truncate">{model.name}</TableCell>
-                  <TableCell className="hidden xl:table-cell text-muted-foreground truncate">
-                    {model.version}
-                  </TableCell>
-                  <TableCell className="hidden xl:table-cell truncate">{model.capabilities.family}</TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    <Badge variant="secondary">
-                      {model.capabilities.type}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-xs">
-                    {model.capabilities.limits?.max_context_window_tokens?.toLocaleString() ??
-                      "-"}
-                  </TableCell>
-                  <TableCell className="hidden sm:table-cell text-right font-mono text-xs">
-                    {model.capabilities.limits?.max_output_tokens?.toLocaleString() ??
-                      "-"}
-                  </TableCell>
-                  <TableCell className="hidden lg:table-cell">
-                    {model.model_picker_enabled ? (
-                      <Badge variant="success">Yes</Badge>
-                    ) : (
-                      <Badge variant="secondary">No</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="hidden lg:table-cell">
-                    {model.preview_state ? (
-                      <Badge variant="info">{model.preview_state}</Badge>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
+          <div className="rounded-card bg-secondary overflow-hidden">
+            <Table className="table-fixed">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[22%]">Model ID</TableHead>
+                  <TableHead className="hidden sm:table-cell w-[15%]">Name</TableHead>
+                  <TableHead className="hidden xl:table-cell w-[8%]">Version</TableHead>
+                  <TableHead className="hidden xl:table-cell w-[11%]">Family</TableHead>
+                  <TableHead className="hidden md:table-cell w-[7%]">Type</TableHead>
+                  <TableHead className="w-[11%] text-right">Context</TableHead>
+                  <TableHead className="hidden sm:table-cell w-[10%] text-right">Max Output</TableHead>
+                  <TableHead className="hidden lg:table-cell w-[8%]">Picker</TableHead>
+                  <TableHead className="hidden lg:table-cell w-[8%]">Preview</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {models.map((model, i) => (
+                  <TableRow key={`${model.id}-${i}`}>
+                    <TableCell className="truncate">
+                      <span className="inline-flex items-center gap-1.5 max-w-full">
+                        <span className="font-mono text-xs truncate">{model.id}</span>
+                        <CopyButton text={model.id} />
+                      </span>
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell font-medium truncate">{model.name}</TableCell>
+                    <TableCell className="hidden xl:table-cell text-muted-foreground truncate">
+                      {model.version}
+                    </TableCell>
+                    <TableCell className="hidden xl:table-cell truncate">{model.capabilities.family}</TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      <Badge variant="secondary">
+                        {model.capabilities.type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs">
+                      {model.capabilities.limits?.max_context_window_tokens?.toLocaleString() ??
+                        "-"}
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell text-right font-mono text-xs">
+                      {model.capabilities.limits?.max_output_tokens?.toLocaleString() ??
+                        "-"}
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell">
+                      {model.model_picker_enabled ? (
+                        <Badge variant="success">Yes</Badge>
+                      ) : (
+                        <Badge variant="secondary">No</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell">
+                      {model.preview_state ? (
+                        <Badge variant="info">{model.preview_state}</Badge>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       ))}
     </>
