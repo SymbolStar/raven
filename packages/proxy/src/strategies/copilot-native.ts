@@ -29,6 +29,7 @@ import {
   logEffortFallback,
 } from "./support/effort-fallback"
 import { translateErrorToAnthropicErrorEvent } from "../protocols/translate/stream-translation"
+import { copilotIdToSdkId } from "../protocols/anthropic/preprocess"
 
 export interface CopilotNativeDeps {
   client: CopilotNativeClient
@@ -76,7 +77,15 @@ export function makeCopilotNative(deps: CopilotNativeDeps): Strategy<
       return { kind: "json", body: response }
     },
 
-    adaptJson: (resp) => resp,
+    adaptJson: (resp) => {
+      if (resp && typeof resp === "object" && "model" in resp && typeof resp.model === "string") {
+        const sdkModel = copilotIdToSdkId(resp.model)
+        if (sdkModel !== resp.model) {
+          return { ...resp, model: sdkModel }
+        }
+      }
+      return resp
+    },
 
     initStreamState: (req) => ({
       resolvedModel: req.options.copilotModel,
@@ -89,11 +98,17 @@ export function makeCopilotNative(deps: CopilotNativeDeps): Strategy<
     adaptChunk: (sseEvent, st, ctx) => {
       emitUpstreamRawSse(ctx.requestId, { event: sseEvent.event, data: sseEvent.data })
 
-      if (sseEvent.data) {
+      let data = sseEvent.data
+      if (data) {
         try {
-          const parsed = JSON.parse(sseEvent.data)
+          const parsed = JSON.parse(data)
           if (parsed.type === "message_start" && parsed.message?.model) {
             st.resolvedModel = parsed.message.model
+            const sdkModel = copilotIdToSdkId(parsed.message.model)
+            if (sdkModel !== parsed.message.model) {
+              parsed.message.model = sdkModel
+              data = JSON.stringify(parsed)
+            }
           }
           if (parsed.type === "message_start" && parsed.message?.usage) {
             st.inputTokens = parsed.message.usage.input_tokens ?? 0
@@ -106,7 +121,7 @@ export function makeCopilotNative(deps: CopilotNativeDeps): Strategy<
         }
       }
 
-      const out: SSEMessage = { data: sseEvent.data }
+      const out: SSEMessage = { data }
       if (sseEvent.event) out.event = sseEvent.event
       return [out]
     },
