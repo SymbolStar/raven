@@ -134,8 +134,26 @@ export function SentinelStatusPanel({ initialData = null }: SentinelStatusPanelP
 
   const c = data.counters;
   const llmTotal = c.llm401TokenExpired + c.llm401Other;
-  const retrySuccess = c.refreshSucceededTokenUpdated;
-  const retryFailed = c.refreshFailed;
+
+  // LLM-401 path outcomes (true "auto-retry" — what the user actually
+  // experiences). Scheduled / manual / sentinel-401 refreshes are background
+  // maintenance and counted separately below.
+  const llm401Success = c.refreshSucceededTokenUpdatedByReason.llm401;
+  const llm401SameToken = c.refreshSucceededTokenSameByReason.llm401;
+  const llm401Failed = c.refreshFailedByReason.llm401;
+  const llm401ShortCircuit = c.refreshShortCircuitByReason.llm401;
+  const llm401MinInterval = c.refreshBlockedByMinIntervalByReason.llm401;
+  const llm401Cooldown = c.refreshBlockedByCooldownByReason.llm401;
+
+  // Background refresh activity (scheduled tick / manual / sentinel-401)
+  const bgRefreshOk =
+    c.refreshSucceededTokenUpdatedByReason.scheduled +
+    c.refreshSucceededTokenUpdatedByReason.sentinel401 +
+    c.refreshSucceededTokenUpdatedByReason.manual;
+  const bgRefreshFailed =
+    c.refreshFailedByReason.scheduled +
+    c.refreshFailedByReason.sentinel401 +
+    c.refreshFailedByReason.manual;
 
   const modeBadge =
     data.mode === "probing"
@@ -158,7 +176,7 @@ export function SentinelStatusPanel({ initialData = null }: SentinelStatusPanelP
             <MetricCell
               label="Token Expired"
               value={c.llm401TokenExpired}
-              hint="Recoverable — auto-retried"
+              hint="Recoverable signal"
             />
             <MetricCell
               label="Other 401"
@@ -173,43 +191,44 @@ export function SentinelStatusPanel({ initialData = null }: SentinelStatusPanelP
           </div>
         </PanelShell>
 
-        {/* Panel 2: Auto-retry outcomes */}
-        <PanelShell title="Auto Retry" icon={RefreshCcw}>
+        {/* Panel 2: LLM-401 auto-retry outcomes (user-experience path only) */}
+        <PanelShell title="LLM-401 Auto Retry" icon={RefreshCcw}>
           <div className="grid grid-cols-2 gap-3">
             <MetricCell
-              label="Token Refreshed"
-              value={retrySuccess}
-              hint="Success — user unaware"
+              label="Refreshed → Retry"
+              value={llm401Success}
+              hint="User unaware"
             />
             <MetricCell
               label="Refresh Failed"
-              value={retryFailed}
-              tone={retryFailed > 0 ? "danger" : "default"}
+              value={llm401Failed}
+              tone={llm401Failed > 0 ? "danger" : "default"}
+              hint="User saw 401"
             />
             <MetricCell
-              label="Cooldown Blocked"
-              value={c.refreshBlockedByCooldown}
-              hint="Saved from upstream"
-            />
-            <MetricCell
-              label="Min-interval Skip"
-              value={c.refreshBlockedByMinInterval}
-              hint="Within 30s window"
+              label="Same Token"
+              value={llm401SameToken}
+              hint="No-op result"
             />
             <MetricCell
               label="Short-circuit"
-              value={c.refreshShortCircuit}
-              hint="Token already fresh"
+              value={llm401ShortCircuit}
+              hint="Already refreshed"
             />
             <MetricCell
-              label="Stale Discarded"
-              value={c.refreshDiscardedStale}
-              hint="Old loop result"
+              label="Cooldown Blocked"
+              value={llm401Cooldown}
+              hint="Backoff active"
+            />
+            <MetricCell
+              label="Min-interval Skip"
+              value={llm401MinInterval}
+              hint="Within 30s window"
             />
           </div>
         </PanelShell>
 
-        {/* Panel 3: Live state */}
+        {/* Panel 3: Live state — current mode + scheduler activity */}
         <PanelShell title="Live State" icon={data.mode === "probing" ? Activity : ShieldCheck}>
           <div className="grid grid-cols-2 gap-3">
             <MetricCell
@@ -237,9 +256,15 @@ export function SentinelStatusPanel({ initialData = null }: SentinelStatusPanelP
               value={formatAge(data.lastSuccessAt)}
             />
             <MetricCell
-              label="Upstream Calls"
-              value={c.refreshUpstreamCalls}
-              hint="Cumulative"
+              label="Background OK"
+              value={bgRefreshOk}
+              hint="Scheduled / probe"
+            />
+            <MetricCell
+              label="Background Fail"
+              value={bgRefreshFailed}
+              tone={bgRefreshFailed > 0 ? "warn" : "default"}
+              hint="Scheduled / probe"
             />
           </div>
         </PanelShell>

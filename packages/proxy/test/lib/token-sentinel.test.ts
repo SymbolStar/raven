@@ -973,4 +973,88 @@ describe("getSentinelStatus / counters", () => {
     expect(s.cooldownRemainingMs).toBe(0)
     expect(s.consecutiveFailures).toBe(0)
   })
+
+  test("by-reason buckets: scheduled success only bumps scheduled bucket", async () => {
+    startSentinel("tok-1", 1500)
+    getCopilotTokenMock.mockResolvedValueOnce({
+      token: "tok-2",
+      refresh_in: 1500,
+      expires_at: 9_999_999_999,
+    })
+    await harness.flushPending()
+
+    const c = getSentinelStatus().counters
+    expect(c.refreshSucceededTokenUpdated).toBe(1) // 聚合
+    expect(c.refreshSucceededTokenUpdatedByReason).toEqual({
+      llm401: 0,
+      sentinel401: 0,
+      scheduled: 1,
+      manual: 0,
+    })
+    expect(c.refreshFailedByReason).toEqual({
+      llm401: 0,
+      sentinel401: 0,
+      scheduled: 0,
+      manual: 0,
+    })
+  })
+
+  test("by-reason buckets: llm-401 path increments llm401 bucket only", async () => {
+    startSentinel("tok-1", 1500)
+    // Advance past min-interval so refreshNow can actually call upstream
+    await harness.advance(31_000)
+
+    getCopilotTokenMock.mockResolvedValueOnce({
+      token: "tok-2",
+      refresh_in: 1500,
+      expires_at: 9_999_999_999,
+    })
+    const r = await refreshNow("llm-401")
+    expect(r.ok).toBe(true)
+
+    const c = getSentinelStatus().counters
+    expect(c.refreshSucceededTokenUpdatedByReason.llm401).toBe(1)
+    expect(c.refreshSucceededTokenUpdatedByReason.scheduled).toBe(0)
+  })
+
+  test("by-reason buckets: llm-401 failure increments llm401 fail bucket only", async () => {
+    startSentinel("tok-1", 1500)
+    await harness.advance(31_000)
+
+    getCopilotTokenMock.mockRejectedValueOnce(new HTTPError("upstream down", 500))
+    const r = await refreshNow("llm-401")
+    expect(r.ok).toBe(false)
+
+    const c = getSentinelStatus().counters
+    expect(c.refreshFailedByReason).toEqual({
+      llm401: 1,
+      sentinel401: 0,
+      scheduled: 0,
+      manual: 0,
+    })
+    expect(c.refreshSucceededTokenUpdatedByReason.llm401).toBe(0)
+  })
+
+  test("by-reason buckets: cooldown / min-interval / short-circuit also bucketed", async () => {
+    startSentinel("tok-1", 1500)
+
+    // min-interval blocks llm-401
+    await refreshNow("llm-401")
+    let c = getSentinelStatus().counters
+    expect(c.refreshBlockedByMinIntervalByReason.llm401).toBe(1)
+
+    // short-circuit (attemptedToken mismatch)
+    state.copilotToken = "fresh-tok"
+    await refreshNow("llm-401", "stale-tok")
+    c = getSentinelStatus().counters
+    expect(c.refreshShortCircuitByReason.llm401).toBe(1)
+
+    // cooldown: fail once then re-call
+    await harness.advance(31_000)
+    getCopilotTokenMock.mockRejectedValueOnce(new HTTPError("down", 500))
+    await refreshNow("manual")
+    await refreshNow("manual")
+    c = getSentinelStatus().counters
+    expect(c.refreshBlockedByCooldownByReason.manual).toBeGreaterThanOrEqual(1)
+  })
 })

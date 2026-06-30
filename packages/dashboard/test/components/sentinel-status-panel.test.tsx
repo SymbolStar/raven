@@ -3,7 +3,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 
 import { SentinelStatusPanel } from "@/app/sentinel-status-panel";
-import type { SentinelStatus } from "@/lib/types";
+import type {
+  SentinelStatus,
+  SentinelReasonBuckets,
+} from "@/lib/types";
+
+function emptyBuckets(): SentinelReasonBuckets {
+  return { llm401: 0, sentinel401: 0, scheduled: 0, manual: 0 };
+}
 
 function buildStatus(overrides: Partial<SentinelStatus> = {}): SentinelStatus {
   return {
@@ -20,12 +27,19 @@ function buildStatus(overrides: Partial<SentinelStatus> = {}): SentinelStatus {
     counters: {
       refreshRequested: { llm401: 0, sentinel401: 0, scheduled: 1, manual: 0 },
       refreshShortCircuit: 0,
+      refreshShortCircuitByReason: emptyBuckets(),
       refreshBlockedByCooldown: 0,
+      refreshBlockedByCooldownByReason: emptyBuckets(),
       refreshBlockedByMinInterval: 0,
+      refreshBlockedByMinIntervalByReason: emptyBuckets(),
       refreshUpstreamCalls: 1,
+      refreshUpstreamCallsByReason: { llm401: 0, sentinel401: 0, scheduled: 1, manual: 0 },
       refreshSucceededTokenUpdated: 1,
+      refreshSucceededTokenUpdatedByReason: { llm401: 0, sentinel401: 0, scheduled: 1, manual: 0 },
       refreshSucceededTokenSame: 0,
+      refreshSucceededTokenSameByReason: emptyBuckets(),
       refreshFailed: 0,
+      refreshFailedByReason: emptyBuckets(),
       refreshDiscardedStale: 0,
       llm401TokenExpired: 0,
       llm401Other: 0,
@@ -61,7 +75,7 @@ describe("SentinelStatusPanel", () => {
       expect(screen.getByText("Token Refresh Sentinel")).toBeTruthy();
     });
     expect(screen.getByText("401 Occurrences")).toBeTruthy();
-    expect(screen.getByText("Auto Retry")).toBeTruthy();
+    expect(screen.getByText("LLM-401 Auto Retry")).toBeTruthy();
     expect(screen.getByText("Live State")).toBeTruthy();
   });
 
@@ -146,6 +160,38 @@ describe("SentinelStatusPanel", () => {
       // Total LLM 401 = 3 + 1 = 4
       expect(screen.getAllByText("4").length).toBeGreaterThan(0);
     });
+  });
+
+  it("LLM-401 panel uses by-reason counters (does NOT count scheduled refresh as auto-retry)", async () => {
+    // Background scheduled refresh succeeded 5 times — must NOT show up as
+    // "Refreshed → Retry". Only an llm-401-triggered refresh should.
+    fetchMock.mockReturnValue(new Promise(() => {}));
+
+    render(
+      <SentinelStatusPanel
+        initialData={buildStatus({
+          counters: {
+            ...buildStatus().counters,
+            // Aggregate happens to be large from background activity
+            refreshSucceededTokenUpdated: 7,
+            refreshSucceededTokenUpdatedByReason: {
+              llm401: 2,         // Only the user-experience path
+              sentinel401: 0,
+              scheduled: 5,      // Background — should NOT inflate LLM panel
+              manual: 0,
+            },
+            refreshFailedByReason: emptyBuckets(),
+          },
+        })}
+      />,
+    );
+
+    // "Refreshed → Retry" cell shows 2 (llm-401 only), not 7
+    const refreshedCell = screen.getByText("Refreshed → Retry").parentElement;
+    expect(refreshedCell?.textContent).toContain("2");
+    // And the Live State panel's "Background OK" reflects the scheduled work
+    const bgCell = screen.getByText("Background OK").parentElement;
+    expect(bgCell?.textContent).toContain("5");
   });
 
   it("formats cooldown across ms / s / m ranges", () => {

@@ -30,7 +30,11 @@ describe("GET /api/sentinel-status", () => {
     expect(counters).toHaveProperty("refreshRequested")
     expect(counters).toHaveProperty("refreshUpstreamCalls")
     expect(counters).toHaveProperty("refreshSucceededTokenUpdated")
+    expect(counters).toHaveProperty("refreshSucceededTokenUpdatedByReason")
     expect(counters).toHaveProperty("refreshFailed")
+    expect(counters).toHaveProperty("refreshFailedByReason")
+    expect(counters).toHaveProperty("refreshBlockedByCooldownByReason")
+    expect(counters).toHaveProperty("refreshShortCircuitByReason")
     expect(counters).toHaveProperty("llm401TokenExpired")
     expect(counters).toHaveProperty("llm401Other")
     expect(counters).toHaveProperty("cacheModels401")
@@ -38,6 +42,16 @@ describe("GET /api/sentinel-status", () => {
 
     const requested = counters.refreshRequested as Record<string, unknown>
     expect(requested).toEqual(
+      expect.objectContaining({
+        llm401: expect.any(Number),
+        sentinel401: expect.any(Number),
+        scheduled: expect.any(Number),
+        manual: expect.any(Number),
+      }),
+    )
+
+    const successByReason = counters.refreshSucceededTokenUpdatedByReason as Record<string, unknown>
+    expect(successByReason).toEqual(
       expect.objectContaining({
         llm401: expect.any(Number),
         sentinel401: expect.any(Number),

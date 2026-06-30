@@ -108,23 +108,37 @@ let dirtyAfterTick = false
 // 这些计数器——它们是进程级累计值。
 // ---------------------------------------------------------------------------
 
+interface RefreshReasonBuckets {
+  llm401: number
+  sentinel401: number
+  scheduled: number
+  manual: number
+}
+
 interface SentinelCounters {
   /** refreshNow() 入口被调用的次数 (按 reason 分桶) */
-  refreshRequested: { llm401: number; sentinel401: number; scheduled: number; manual: number }
-  /** refreshNow 短路（attemptedToken 不匹配，未访问上游） */
+  refreshRequested: RefreshReasonBuckets
+  /** refreshNow 短路（attemptedToken 不匹配，未访问上游）— 按 reason 分桶 */
   refreshShortCircuit: number
-  /** refreshNow 命中 cooldown，被全局退避拦回 */
+  refreshShortCircuitByReason: RefreshReasonBuckets
+  /** refreshNow 命中 cooldown，被全局退避拦回 — 按 reason 分桶 */
   refreshBlockedByCooldown: number
-  /** refreshNow 命中 min-interval，未访问上游 */
+  refreshBlockedByCooldownByReason: RefreshReasonBuckets
+  /** refreshNow 命中 min-interval，未访问上游 — 按 reason 分桶 */
   refreshBlockedByMinInterval: number
+  refreshBlockedByMinIntervalByReason: RefreshReasonBuckets
   /** 真正访问了上游的 getCopilotToken（无论成功失败）次数 */
   refreshUpstreamCalls: number
-  /** 上游访问成功且确实换了 token */
+  refreshUpstreamCallsByReason: RefreshReasonBuckets
+  /** 上游访问成功且确实换了 token — 按 reason 分桶 */
   refreshSucceededTokenUpdated: number
-  /** 上游访问成功但 token 字面没变（refresh_in 续期类） */
+  refreshSucceededTokenUpdatedByReason: RefreshReasonBuckets
+  /** 上游访问成功但 token 字面没变（refresh_in 续期类）— 按 reason 分桶 */
   refreshSucceededTokenSame: number
-  /** 上游访问失败次数 */
+  refreshSucceededTokenSameByReason: RefreshReasonBuckets
+  /** 上游访问失败次数 — 按 reason 分桶 */
   refreshFailed: number
+  refreshFailedByReason: RefreshReasonBuckets
   /** stale generation 路径（旧 loop inflight 被丢弃） */
   refreshDiscardedStale: number
   /** LLM 路径上报的 401 — token-expired 文案命中 */
@@ -137,15 +151,26 @@ interface SentinelCounters {
   probingEntered: number
 }
 
+function zeroBuckets(): RefreshReasonBuckets {
+  return { llm401: 0, sentinel401: 0, scheduled: 0, manual: 0 }
+}
+
 const counters: SentinelCounters = {
-  refreshRequested: { llm401: 0, sentinel401: 0, scheduled: 0, manual: 0 },
+  refreshRequested: zeroBuckets(),
   refreshShortCircuit: 0,
+  refreshShortCircuitByReason: zeroBuckets(),
   refreshBlockedByCooldown: 0,
+  refreshBlockedByCooldownByReason: zeroBuckets(),
   refreshBlockedByMinInterval: 0,
+  refreshBlockedByMinIntervalByReason: zeroBuckets(),
   refreshUpstreamCalls: 0,
+  refreshUpstreamCallsByReason: zeroBuckets(),
   refreshSucceededTokenUpdated: 0,
+  refreshSucceededTokenUpdatedByReason: zeroBuckets(),
   refreshSucceededTokenSame: 0,
+  refreshSucceededTokenSameByReason: zeroBuckets(),
   refreshFailed: 0,
+  refreshFailedByReason: zeroBuckets(),
   refreshDiscardedStale: 0,
   llm401TokenExpired: 0,
   llm401Other: 0,
@@ -153,13 +178,21 @@ const counters: SentinelCounters = {
   probingEntered: 0,
 }
 
-function incRefreshRequested(reason: RefreshReason): void {
+function reasonKey(reason: RefreshReason): keyof RefreshReasonBuckets {
   switch (reason) {
-    case "llm-401":      counters.refreshRequested.llm401 += 1; break
-    case "sentinel-401": counters.refreshRequested.sentinel401 += 1; break
-    case "scheduled":    counters.refreshRequested.scheduled += 1; break
-    case "manual":       counters.refreshRequested.manual += 1; break
+    case "llm-401":      return "llm401"
+    case "sentinel-401": return "sentinel401"
+    case "scheduled":    return "scheduled"
+    case "manual":       return "manual"
   }
+}
+
+function bumpBy(reason: RefreshReason, bucket: RefreshReasonBuckets): void {
+  bucket[reasonKey(reason)] += 1
+}
+
+function incRefreshRequested(reason: RefreshReason): void {
+  bumpBy(reason, counters.refreshRequested)
 }
 
 /** External: report an llm-side 401 outcome (called by upstream clients). */
@@ -196,20 +229,34 @@ export function getSentinelStatus(): {
     counters: {
       ...counters,
       refreshRequested: { ...counters.refreshRequested },
+      refreshShortCircuitByReason: { ...counters.refreshShortCircuitByReason },
+      refreshBlockedByCooldownByReason: { ...counters.refreshBlockedByCooldownByReason },
+      refreshBlockedByMinIntervalByReason: { ...counters.refreshBlockedByMinIntervalByReason },
+      refreshUpstreamCallsByReason: { ...counters.refreshUpstreamCallsByReason },
+      refreshSucceededTokenUpdatedByReason: { ...counters.refreshSucceededTokenUpdatedByReason },
+      refreshSucceededTokenSameByReason: { ...counters.refreshSucceededTokenSameByReason },
+      refreshFailedByReason: { ...counters.refreshFailedByReason },
     },
   }
 }
 
 /** Test-only: reset all observability counters. Production never calls this. */
 export function _resetSentinelCountersForTest(): void {
-  counters.refreshRequested = { llm401: 0, sentinel401: 0, scheduled: 0, manual: 0 }
+  counters.refreshRequested = zeroBuckets()
   counters.refreshShortCircuit = 0
+  counters.refreshShortCircuitByReason = zeroBuckets()
   counters.refreshBlockedByCooldown = 0
+  counters.refreshBlockedByCooldownByReason = zeroBuckets()
   counters.refreshBlockedByMinInterval = 0
+  counters.refreshBlockedByMinIntervalByReason = zeroBuckets()
   counters.refreshUpstreamCalls = 0
+  counters.refreshUpstreamCallsByReason = zeroBuckets()
   counters.refreshSucceededTokenUpdated = 0
+  counters.refreshSucceededTokenUpdatedByReason = zeroBuckets()
   counters.refreshSucceededTokenSame = 0
+  counters.refreshSucceededTokenSameByReason = zeroBuckets()
   counters.refreshFailed = 0
+  counters.refreshFailedByReason = zeroBuckets()
   counters.refreshDiscardedStale = 0
   counters.llm401TokenExpired = 0
   counters.llm401Other = 0
@@ -480,6 +527,7 @@ export async function refreshNow(
   // 1. 短路：state 已比 caller 用的更新 → 让 caller 重试
   if (attemptedToken && state.copilotToken !== attemptedToken) {
     counters.refreshShortCircuit += 1
+    bumpBy(reason, counters.refreshShortCircuitByReason)
     return { ok: true, tokenWasUpdated: true, refreshInSeconds: null }
   }
 
@@ -490,6 +538,7 @@ export async function refreshNow(
   const cooldownLeft = getRefreshCooldownRemaining()
   if (cooldownLeft > 0) {
     counters.refreshBlockedByCooldown += 1
+    bumpBy(reason, counters.refreshBlockedByCooldownByReason)
     return {
       ok: false,
       error: new Error("refresh in cooldown"),
@@ -508,6 +557,7 @@ export async function refreshNow(
     const sinceLast = Date.now() - lastSuccessAt
     if (sinceLast < MIN_REFRESH_INTERVAL_MS && lastSuccessAt > 0) {
       counters.refreshBlockedByMinInterval += 1
+      bumpBy(reason, counters.refreshBlockedByMinIntervalByReason)
       return { ok: true, tokenWasUpdated: false, refreshInSeconds: null }
     }
   }
@@ -521,6 +571,7 @@ export async function refreshNow(
     try {
       const oldToken = state.copilotToken
       counters.refreshUpstreamCalls += 1
+      bumpBy(reason, counters.refreshUpstreamCallsByReason)
       const { token, refresh_in } = await getCopilotToken()
 
       // generation 校验：旧 loop 飞行刷新被废弃
@@ -537,8 +588,13 @@ export async function refreshNow(
       state.copilotToken = token // I-1 唯一写入点
       noteSuccess(refresh_in)
       const tokenWasUpdated = token !== oldToken
-      if (tokenWasUpdated) counters.refreshSucceededTokenUpdated += 1
-      else counters.refreshSucceededTokenSame += 1
+      if (tokenWasUpdated) {
+        counters.refreshSucceededTokenUpdated += 1
+        bumpBy(reason, counters.refreshSucceededTokenUpdatedByReason)
+      } else {
+        counters.refreshSucceededTokenSame += 1
+        bumpBy(reason, counters.refreshSucceededTokenSameByReason)
+      }
       return {
         ok: true,
         tokenWasUpdated,
@@ -559,6 +615,7 @@ export async function refreshNow(
         }
       }
       counters.refreshFailed += 1
+      bumpBy(reason, counters.refreshFailedByReason)
       const cooldownMs = noteFailure()
       logger.error("refreshNow failed", {
         reason,

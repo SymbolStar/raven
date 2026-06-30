@@ -362,20 +362,29 @@ export interface UpstreamModelsResponse {
 // SentinelStatus — token-refresh observability (see docs/23-token-sentinel.md)
 // ---------------------------------------------------------------------------
 
+export interface SentinelReasonBuckets {
+  llm401: number;
+  sentinel401: number;
+  scheduled: number;
+  manual: number;
+}
+
 export interface SentinelCounters {
-  refreshRequested: {
-    llm401: number;
-    sentinel401: number;
-    scheduled: number;
-    manual: number;
-  };
+  refreshRequested: SentinelReasonBuckets;
   refreshShortCircuit: number;
+  refreshShortCircuitByReason: SentinelReasonBuckets;
   refreshBlockedByCooldown: number;
+  refreshBlockedByCooldownByReason: SentinelReasonBuckets;
   refreshBlockedByMinInterval: number;
+  refreshBlockedByMinIntervalByReason: SentinelReasonBuckets;
   refreshUpstreamCalls: number;
+  refreshUpstreamCallsByReason: SentinelReasonBuckets;
   refreshSucceededTokenUpdated: number;
+  refreshSucceededTokenUpdatedByReason: SentinelReasonBuckets;
   refreshSucceededTokenSame: number;
+  refreshSucceededTokenSameByReason: SentinelReasonBuckets;
   refreshFailed: number;
+  refreshFailedByReason: SentinelReasonBuckets;
   refreshDiscardedStale: number;
   llm401TokenExpired: number;
   llm401Other: number;
