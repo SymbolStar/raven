@@ -47,7 +47,7 @@ export const copilotBaseUrl = (state: State) =>
 export const copilotHeadersForToken = (
   state: State,
   token: string | null,
-  vision: boolean = false,
+  vision = false,
 ) => {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token ?? ""}`,
@@ -68,7 +68,7 @@ export const copilotHeadersForToken = (
   return headers
 }
 
-export const copilotHeaders = (state: State, vision: boolean = false) =>
+export const copilotHeaders = (state: State, vision = false) =>
   copilotHeadersForToken(state, state.copilotToken, vision)
 
 export const GITHUB_API_BASE_URL = "https://api.github.com"

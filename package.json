@@ -31,7 +31,7 @@
     "release": "bun run scripts/release.ts"
   },
   "lint-staged": {
-    "packages/{proxy,dashboard}/{src,test}/**/*.{ts,tsx,js,jsx}": "biome check --no-errors-on-unmatched --max-diagnostics=500"
+    "packages/{proxy,dashboard}/{src,test}/**/*.{ts,tsx,js,jsx}": "biome check --no-errors-on-unmatched --error-on-warnings --max-diagnostics=500"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.3",

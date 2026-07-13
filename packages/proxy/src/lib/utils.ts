@@ -31,7 +31,9 @@ export function refreshModelsIfStale(): void {
   if (Date.now() - modelsCachedAt < MODEL_CACHE_TTL_MS) return
   if (modelsRefreshing) return
   modelsRefreshing = cacheModels()
-    .catch(() => {})
+    .catch(() => {
+      // swallow — refresh is fire-and-forget, next tick will retry
+    })
     .finally(() => { modelsRefreshing = null })
 }
 

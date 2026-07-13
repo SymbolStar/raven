@@ -9,7 +9,7 @@ export class HTTPError extends Error {
   status: number
   responseBody: string
 
-  constructor(message: string, status: number, responseBody: string = "") {
+  constructor(message: string, status: number, responseBody = "") {
     super(message)
     this.status = status
     this.responseBody = responseBody

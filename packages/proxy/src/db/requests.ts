@@ -755,7 +755,7 @@ export function queryModels(db: Database): ModelStats[] {
 
 export function queryRecent(
   db: Database,
-  limit: number = 50,
+  limit = 50,
 ): RequestRecord[] {
   return db
     .query(
