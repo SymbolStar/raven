@@ -36,6 +36,7 @@
 				"useLiteralEnumMembers": "error",
 				"useEnumInitializers": "error",
 				"useArrayLiterals": "error",
+				"useUnifiedTypeSignatures": "error",
 				"noNamespace": "error",
 				"noInferrableTypes": "error",
 				"noNonNullAssertion": "off"
