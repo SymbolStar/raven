@@ -47,7 +47,7 @@ describe("startKeepalive", () => {
       timers.push({ cb, ms, id })
       return id as any
     }
-    // @ts-expect-error
+    // @ts-expect-error – override for testing
     globalThis.clearInterval = (id: number) => {
       timers = timers.filter((t) => t.id !== id)
     }

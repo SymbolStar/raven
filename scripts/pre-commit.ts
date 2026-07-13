@@ -9,6 +9,8 @@ const tasks: Task[] = [
   { name: "lint-staged", gate: "G1", cmd: ["bunx", "lint-staged"] },
   { name: "typecheck", gate: "G1", cmd: ["bun", "run", "typecheck"] },
   { name: "fetch-boundary", gate: "G1", cmd: ["bun", "run", "scripts/check-fetch-boundary.ts"] },
+  { name: "dynamic-delete", gate: "G1", cmd: ["bun", "run", "scripts/check-dynamic-delete.ts"] },
+  { name: "ts-expect-error", gate: "G1", cmd: ["bun", "run", "scripts/check-ts-expect-error.ts"] },
   { name: "gitleaks", gate: "G2", cmd: ["gitleaks", "protect", "--staged", "--no-banner"] },
 ];
 

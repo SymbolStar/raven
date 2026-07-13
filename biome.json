@@ -35,6 +35,7 @@
 				"useAsConstAssertion": "error",
 				"useLiteralEnumMembers": "error",
 				"useEnumInitializers": "error",
+				"useArrayLiterals": "error",
 				"noNamespace": "error",
 				"noInferrableTypes": "error",
 				"noNonNullAssertion": "off"
@@ -49,11 +50,12 @@
 				"noPrototypeBuiltins": "error",
 				"noSelfCompare": "error",
 				"noConfusingLabels": "error",
-				"noEmptyBlockStatements": "off",
+				"noEmptyBlockStatements": "error",
 				"noEmptyInterface": "error",
 				"noNonNullAssertedOptionalChain": "error",
 				"useAwait": "off",
-				"noTsIgnore": "error"
+				"noTsIgnore": "error",
+				"useAdjacentOverloadSignatures": "error"
 			},
 			"complexity": {
 				"noBannedTypes": "error",
@@ -61,6 +63,7 @@
 				"noUselessTypeConstraint": "error",
 				"noUselessEmptyExport": "error",
 				"noUselessConstructor": "error",
+				"noUselessThisAlias": "error",
 				"useOptionalChain": "error",
 				"useLiteralKeys": "error",
 				"useRegexLiterals": "error"
@@ -114,7 +117,8 @@
 			"linter": {
 				"rules": {
 					"suspicious": {
-						"noExplicitAny": "off"
+						"noExplicitAny": "off",
+						"noEmptyBlockStatements": "off"
 					},
 					"style": {
 						"useImportType": "off"
