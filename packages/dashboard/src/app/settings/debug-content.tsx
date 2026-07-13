@@ -25,7 +25,6 @@ const DEBUG_ITEMS = [
 ]
 
 export function DebugContent({ data }: DebugContentProps) {
-  const router = useRouter()
   const info = data.tool_call_debug
 
   if (!info) {
@@ -36,6 +35,11 @@ export function DebugContent({ data }: DebugContentProps) {
     )
   }
 
+  return <DebugContentBody info={info} />
+}
+
+function DebugContentBody({ info }: { info: DebugInfo }) {
+  const router = useRouter()
   const key = info.key
   const [enabled, setEnabled] = useState(info.enabled)
   const [saving, setSaving] = useState(false)
