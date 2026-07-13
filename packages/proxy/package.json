@@ -11,7 +11,7 @@
     "test:e2e": "bun test test/e2e/",
     "test:perf": "bun test test/perf/",
     "lint": "biome check --no-errors-on-unmatched --error-on-warnings --max-diagnostics=500 src test",
-    "typecheck": "bun ../../node_modules/typescript7/bin/tsc --noEmit"
+    "typecheck": "bunx tsc --noEmit"
   },
   "dependencies": {
     "gpt-tokenizer": "^3.0.1",

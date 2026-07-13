@@ -40,8 +40,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8",
     "oxc-parser": "0.139.0",
-    "typescript": "6.0.3",
-    "typescript7": "npm:typescript@7.0.2"
+    "typescript": "^7.0.2"
   },
   "overrides": {
     "flatted": ">=3.4.2",

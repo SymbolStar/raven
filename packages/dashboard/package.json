@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start -p 7023",
     "lint": "biome check --no-errors-on-unmatched --error-on-warnings --max-diagnostics=500 src test",
-    "typecheck": "bun ../../node_modules/typescript7/bin/tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
     "test:watch": "vitest"
   },
@@ -34,11 +34,12 @@
     "@types/node": "26.1.1",
     "@types/react": "19.2.17",
     "@types/react-dom": "^19.1.2",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "@vitejs/plugin-react": "^6.0.3",
     "@vitest/coverage-v8": "4.1.10",
     "jsdom": "^29.0.0",
     "tailwindcss": "^4.3.2",
-    "typescript": "6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "4.1.10"
   }
 }
