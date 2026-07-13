@@ -1,5 +1,56 @@
 # Changelog
 
+## v2.4.0
+
+### Changed
+- Promote scripts/ to the same biome gate as packages/
+- Finish TS 7 upgrade via @typescript/native-preview
+- Promote TS 7.0.2 to G1 gate; keep TS 6 for Next build
+- Switch static-check scripts from typescript to oxc-parser
+- Tighten strict parity — right rule + AST-based guards
+- Finish tseslint-strict parity — biome + two custom guards
+- Replace ESLint/Prettier references with Biome
+- Elevate biome strict parity rules to error + gate warnings
+- Update CLAUDE.md — G1 static analysis is now biome, not eslint
+- Switch from eslint to biome as the sole linter
+- Stabilise list keys and pin intentional hook deps
+- A11y and best-practice hygiene per biome recommended
+- Apply biome safe auto-fixes across proxy + dashboard
+- Add @biomejs/biome 2.5.3 alongside eslint
+- Upgrade eslint 10.6.0 → 10.7.0
+- Upgrade hono 4.12.28 → 4.12.29
+- Upgrade vite 8.1.3→8.1.4 & lucide-react 1.23.0→1.24.0 (#163)
+- Upgrade @types/node 26.1.0 → 26.1.1
+- Upgrade @vitest/coverage-istanbul 4.1.9 → 4.1.10
+- Upgrade @vitest/coverage-v8 4.1.9 → 4.1.10
+- Upgrade vitest 4.1.9 → 4.1.10
+- Upgrade typescript-eslint 8.62.1 → 8.63.0
+- Upgrade radix-ui 1.6.1 → 1.6.2
+- Upgrade hono 4.12.27 → 4.12.28
+- Upgrade recharts 3.9.1 → 3.9.2 (#150)
+- Upgrade vite 8.1.2 → 8.1.3 (#148)
+- Add root .npmrc for supply chain security baseline
+- Upgrade next 16.2.9 → 16.2.10
+- Upgrade lucide-react 1.22.0 → 1.23.0
+- Bump eslint-config-next to 16.2.10 in dashboard
+- Bump @types/node to 26.1.0 in dashboard
+- Upgrade dependencies (batch 2026-07-01) (#140)
+- Upgrade dependencies (batch 2026-06-30) (#136)
+- Cover default Copilot upstream config accessors + native thinking + cors/socks5
+
+### Fixed
+- Bump detect-local-versions.test.ts remaining fs cases to a 30s timeout to prevent flakes under pre-commit parallelism
+- Survive a clean install — shim TS 6 inside depcruise store
+- Make `build` gate on tsc typecheck
+- Restore depcruise coverage under TS 7 + empty-cruise guard
+- Move anchor snapshot to the SSE event boundary
+- Capture anchor pre-commit and stabilise system-group keys
+- DOM-anchor scroll compensation, robust across ring-buffer wrap
+- Strip trailing whitespace introduced by biome auto-fix
+- Keep scroll compensation firing after buffer saturates
+- Restore !important on reduced-motion overrides
+- Move hooks out of the early-return branch in DebugContent
+
 ## v2.3.8
 
 ### Added

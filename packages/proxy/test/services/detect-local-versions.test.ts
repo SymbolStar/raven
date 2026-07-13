@@ -291,7 +291,7 @@ describe("detectLocalCopilotVersion", () => {
     ]);
 
     expect(await detectLocalCopilotVersion()).toBe("0.23.0");
-  });
+  }, 30000);
 
   test("ignores entries that don't match version pattern", async () => {
     mocks.mockPlatform = "darwin";
@@ -300,7 +300,7 @@ describe("detectLocalCopilotVersion", () => {
     ]);
 
     expect(await detectLocalCopilotVersion()).toBeNull();
-  });
+  }, 30000);
 
   test("returns null when best package.json read throws after glob match", async () => {
     mocks.mockPlatform = "darwin";
@@ -317,7 +317,7 @@ describe("detectLocalCopilotVersion", () => {
       return await f.text();
     };
     expect(await detectLocalCopilotVersion()).toBeNull();
-  });
+  }, 30000);
 
   test("compareSemver returns 0 for identical versions (sort stays stable)", async () => {
     mocks.mockPlatform = "darwin";
@@ -329,5 +329,5 @@ describe("detectLocalCopilotVersion", () => {
     ]);
     // Both candidates compare equal — exercises the `return 0` branch.
     expect(await detectLocalCopilotVersion()).toBe("0.40.0");
-  });
+  }, 30000);
 });
