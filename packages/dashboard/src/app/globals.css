@@ -378,10 +378,14 @@
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms;
-    animation-iteration-count: 1;
-    transition-duration: 0.01ms;
-    scroll-behavior: auto;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced-motion must win over inline `transition` set by libraries and component overrides */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced-motion must win over inline `transition` set by libraries and component overrides */
+    animation-iteration-count: 1 !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced-motion must win over inline `transition` set by libraries and component overrides */
+    transition-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced-motion must win over inline `transition` set by libraries and component overrides */
+    scroll-behavior: auto !important;
   }
 }
 
