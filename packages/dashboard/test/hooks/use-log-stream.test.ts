@@ -184,6 +184,30 @@ describe("useLogStream", () => {
       expect(result.current.events[0]!.msg).toBe("hello");
     });
 
+    it("stamps every accepted event with a monotonic _seq", async () => {
+      const useLogStream = await importHook();
+      const { result } = renderHook(() => useLogStream());
+
+      act(() => {
+        for (let i = 0; i < 4; i++) {
+          lastES().emit("log", makeLogData({ msg: `m-${i}`, ts: 1000 + i }));
+        }
+      });
+
+      const seqs = result.current.events.map((e) => e._seq);
+      // Each _seq must be defined, unique, and strictly increasing
+      expect(seqs).toEqual([1, 2, 3, 4]);
+
+      // Same-ms collisions still get distinct _seq
+      act(() => {
+        lastES().emit("log", makeLogData({ msg: "twin-a", ts: 999 }));
+        lastES().emit("log", makeLogData({ msg: "twin-b", ts: 999 }));
+      });
+      const last = result.current.events.slice(-2).map((e) => e._seq);
+      expect(last[0]).toBe(5);
+      expect(last[1]).toBe(6);
+    });
+
     it('"log" event with malformed JSON → ignored (no crash)', async () => {
       const useLogStream = await importHook();
       const { result } = renderHook(() => useLogStream());

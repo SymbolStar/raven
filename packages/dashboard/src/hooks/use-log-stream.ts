@@ -22,6 +22,17 @@ export interface LogEvent {
   requestId?: string;
   msg: string;
   data?: Record<string, unknown>;
+  /**
+   * Client-assigned monotonic sequence number, unique within the hook's
+   * lifetime. Stable across renders and unaffected by ring-buffer
+   * eviction. Consumers should key React lists off `_seq` rather than
+   * `ts` (which can collide within the same millisecond) or the array
+   * index (which shifts when the oldest event is evicted).
+   *
+   * Optional so tests and other synthetic LogEvent constructors don't
+   * need to invent a counter — the hook itself always populates it.
+   */
+  _seq?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -85,6 +96,15 @@ export function useLogStream(
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Monotonic id for `_seq`. Lives outside React state so it advances
+  // exactly once per accepted event even when React batches updates
+  // or when strict-mode re-invokes the setter.
+  const seqCounterRef = useRef(0);
+
+  const stampEvent = useCallback((raw: LogEvent): LogEvent => {
+    seqCounterRef.current += 1;
+    return { ...raw, _seq: seqCounterRef.current };
+  }, []);
 
   const clear = useCallback(() => {
     setEvents([]);
@@ -127,7 +147,8 @@ export function useLogStream(
 
       es.addEventListener("log", (e) => {
         try {
-          const event: LogEvent = JSON.parse(e.data);
+          const raw: LogEvent = JSON.parse(e.data);
+          const event = stampEvent(raw);
           if (pausedRef.current) {
             // If paused, buffer events for later flush
             pauseBufferRef.current.push(event);
@@ -188,7 +209,7 @@ export function useLogStream(
       setConnected(false);
     };
     // Re-connect when level or requestId changes
-  }, [enabled, level, requestId, maxEvents]);
+  }, [enabled, level, requestId, maxEvents, stampEvent]);
 
   return {
     events,

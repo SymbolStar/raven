@@ -32,6 +32,7 @@ import {
   type LogLevel,
 } from "@/hooks/use-log-stream";
 import { LogsStats } from "./logs-stats";
+import { groupEvents } from "./group-events";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -136,29 +137,6 @@ function serializeEvents(events: LogEvent[]): string {
       return `[${ts}] ${e.level.toUpperCase()} ${e.type}${e.requestId ? ` (${e.requestId})` : ""}: ${e.msg}${data}`;
     })
     .join("\n");
-}
-
-/** Group events by requestId. System events (no requestId) are standalone. */
-function groupEvents(events: LogEvent[]) {
-  const groups: { key: string; events: LogEvent[] }[] = [];
-  const requestMap = new Map<string, number>();
-
-  for (const event of events) {
-    if (!event.requestId) {
-      groups.push({ key: `sys-${event.ts}-${Math.random()}`, events: [event] });
-    } else {
-      const existing = requestMap.get(event.requestId);
-      if (existing !== undefined) {
-        groups[existing]!.events.push(event);
-      } else {
-        requestMap.set(event.requestId, groups.length);
-        groups.push({ key: event.requestId, events: [event] });
-      }
-    }
-  }
-
-  // Newest first — reverse so latest groups appear at the top
-  return groups.reverse();
 }
 
 // ---------------------------------------------------------------------------
@@ -788,12 +766,17 @@ export function LogsContent() {
   const scrollRef = useRef<HTMLDivElement>(null);
   // "pinned to top" means user is at scrollTop ≈ 0 and wants to see newest
   const pinnedRef = useRef(true);
-  // DOM anchor captured just before the next render commits — a stable
-  // group-key + its distance below scrollTop. After render we find that
-  // same key and rewrite scrollTop so the anchor lands at the same
-  // viewport offset. Survives top-inserts, bottom-pops, and the
-  // ring-buffer wrap; unaffected by ts collisions.
+  // DOM anchor captured while the previous commit's DOM is still on
+  // screen — a stable group-key + its distance below scrollTop.
+  // useLayoutEffect can't do this: React's commit order for pass N is
+  //   1. update DOM to N   2. cleanup(N-1)   3. setup(N)
+  // Both cleanup and setup run AFTER the DOM has already been rewritten,
+  // so any snapshot from them describes commit N, not N-1. The only
+  // hook-safe place to observe the pre-commit DOM is the render body
+  // itself. We do a guarded read there — idempotent (guarded by
+  // lastCapturedSeqRef) so strict-mode double-invocation is fine.
   const anchorRef = useRef<{ key: string; distance: number } | null>(null);
+  const lastCapturedSeqRef = useRef(0);
 
   const handleLevelChange = useCallback(
     (newLevel: LogLevel) => {
@@ -803,34 +786,38 @@ export function LogsContent() {
     [setStreamLevel],
   );
 
-  // Capture anchor synchronously before React commits (paint blocked).
-  // Skip when pinned — the branch after commit just snaps scrollTop to 0.
-  useLayoutEffect(() => {
+  // Pre-commit snapshot — runs in the render body. The DOM at this
+  // point still reflects the previous commit, which is what we need to
+  // measure "where the user is looking right now". Guarded so it fires
+  // at most once per eventSeq bump (strict-mode safe).
+  if (
+    typeof window !== "undefined" &&
+    lastCapturedSeqRef.current !== eventSeq &&
+    scrollRef.current &&
+    !pinnedRef.current
+  ) {
     const el = scrollRef.current;
-    if (!el) {
-      anchorRef.current = null;
-      return;
-    }
-    if (pinnedRef.current) {
-      anchorRef.current = null;
-      return;
-    }
     const containerTop = el.getBoundingClientRect().top;
     const nodes = el.querySelectorAll<HTMLElement>("[data-group-key]");
-    // First group whose bottom sits below the viewport top — that's the
-    // one the user actually sees at the top edge.
+    let captured: { key: string; distance: number } | null = null;
     for (const node of Array.from(nodes)) {
       const rect = node.getBoundingClientRect();
       if (rect.bottom > containerTop) {
-        anchorRef.current = {
+        captured = {
           key: node.dataset.groupKey ?? "",
           distance: rect.top - containerTop,
         };
-        return;
+        break;
       }
     }
+    anchorRef.current = captured;
+    lastCapturedSeqRef.current = eventSeq;
+  } else if (pinnedRef.current && lastCapturedSeqRef.current !== eventSeq) {
+    // Pinned: no anchor, but still advance the guard so we don't try to
+    // capture stale DOM on the next render pass.
     anchorRef.current = null;
-  });
+    lastCapturedSeqRef.current = eventSeq;
+  }
 
   // Apply anchor after commit, before browser paints.
   // biome-ignore lint/correctness/useExhaustiveDependencies: eventSeq is the intentional trigger; effect closure reads only refs/DOM
