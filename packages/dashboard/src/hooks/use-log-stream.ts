@@ -44,6 +44,17 @@ interface UseLogStreamOptions {
   requestId?: string;
   maxEvents?: number;
   enabled?: boolean;
+  /**
+   * Called synchronously in the SSE listener BEFORE the state update
+   * that appends the new event. This is the only point where the
+   * previous commit's DOM is guaranteed to still be on screen — React
+   * hasn't scheduled the re-render yet — so consumers that need a
+   * pre-commit snapshot (e.g. capturing a scroll anchor) must do it
+   * here, not in a render body or useLayoutEffect. Called once per
+   * accepted live event, and once per event flushed from the pause
+   * buffer. Not called for events dropped due to malformed JSON.
+   */
+  onBeforeAppend?: () => void;
 }
 
 interface UseLogStreamReturn {
@@ -79,6 +90,7 @@ export function useLogStream(
     requestId,
     maxEvents = MAX_EVENTS_DEFAULT,
     enabled = true,
+    onBeforeAppend,
   } = options;
 
   const [events, setEvents] = useState<LogEvent[]>([]);
@@ -90,6 +102,11 @@ export function useLogStream(
   // Refs for values accessed inside the SSE listener closure
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
+  // Latest onBeforeAppend closure. Kept in a ref so changing it
+  // (which the consumer will do every render — new anchor-capture
+  // closure per state) does NOT tear down the SSE connection.
+  const onBeforeAppendRef = useRef(onBeforeAppend);
+  onBeforeAppendRef.current = onBeforeAppend;
 
   // Buffers for pause mode
   const pauseBufferRef = useRef<LogEvent[]>([]);
@@ -117,6 +134,11 @@ export function useLogStream(
     if (!paused && pauseBufferRef.current.length > 0) {
       const buffered = pauseBufferRef.current;
       pauseBufferRef.current = [];
+      try {
+        onBeforeAppendRef.current?.();
+      } catch {
+        // Ignore consumer-side snapshot errors
+      }
       setEvents((prev) => {
         const combined = [...prev, ...buffered];
         return combined.length > maxEvents
@@ -153,6 +175,15 @@ export function useLogStream(
             // If paused, buffer events for later flush
             pauseBufferRef.current.push(event);
           } else {
+            // Give the consumer a chance to snapshot the pre-commit
+            // DOM BEFORE we schedule the re-render. Any throw is
+            // swallowed — a broken snapshot callback must not drop
+            // the log event.
+            try {
+              onBeforeAppendRef.current?.();
+            } catch {
+              // Ignore consumer-side snapshot errors
+            }
             setEvents((prev) => {
               const next = [...prev, event];
               return next.length > maxEvents ? next.slice(-maxEvents) : next;

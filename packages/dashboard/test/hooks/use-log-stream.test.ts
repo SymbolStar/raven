@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
+import type { LogEvent } from "@/hooks/use-log-stream";
 
 // ---------------------------------------------------------------------------
 // Mock EventSource
@@ -206,6 +207,88 @@ describe("useLogStream", () => {
       const last = result.current.events.slice(-2).map((e) => e._seq);
       expect(last[0]).toBe(5);
       expect(last[1]).toBe(6);
+    });
+
+    it("calls onBeforeAppend once per live event BEFORE the state update", async () => {
+      const useLogStream = await importHook();
+      const calls: { snapshotOfEventsLength: number }[] = [];
+      let latestEvents: LogEvent[] = [];
+      const { result } = renderHook(() =>
+        useLogStream({
+          onBeforeAppend: () => {
+            // Callback runs before setEvents; the events state should
+            // reflect the PRE-append length at this moment.
+            calls.push({ snapshotOfEventsLength: latestEvents.length });
+          },
+        }),
+      );
+      // Track the latest events array outside the render closure so
+      // the callback can observe the pre-append length precisely.
+      latestEvents = result.current.events;
+
+      act(() => {
+        lastES().emit("log", makeLogData({ msg: "first" }));
+      });
+      latestEvents = result.current.events;
+
+      act(() => {
+        lastES().emit("log", makeLogData({ msg: "second" }));
+      });
+      latestEvents = result.current.events;
+
+      expect(calls).toHaveLength(2);
+      expect(calls[0]!.snapshotOfEventsLength).toBe(0);
+      expect(calls[1]!.snapshotOfEventsLength).toBe(1);
+      expect(result.current.events).toHaveLength(2);
+    });
+
+    it("swallows exceptions thrown by onBeforeAppend without dropping events", async () => {
+      const useLogStream = await importHook();
+      const { result } = renderHook(() =>
+        useLogStream({
+          onBeforeAppend: () => {
+            throw new Error("snapshot failed");
+          },
+        }),
+      );
+
+      act(() => {
+        lastES().emit("log", makeLogData({ msg: "should-still-arrive" }));
+      });
+
+      expect(result.current.events).toHaveLength(1);
+      expect(result.current.events[0]!.msg).toBe("should-still-arrive");
+    });
+
+    it("skips onBeforeAppend for events buffered while paused, fires once on flush", async () => {
+      const useLogStream = await importHook();
+      let calls = 0;
+      const { result } = renderHook(() =>
+        useLogStream({
+          onBeforeAppend: () => {
+            calls += 1;
+          },
+        }),
+      );
+
+      act(() => {
+        result.current.setPaused(true);
+      });
+      // Buffered events should NOT trigger the snapshot yet — they
+      // aren't being appended, they're being queued.
+      act(() => {
+        lastES().emit("log", makeLogData({ msg: "b1" }));
+        lastES().emit("log", makeLogData({ msg: "b2" }));
+        lastES().emit("log", makeLogData({ msg: "b3" }));
+      });
+      expect(calls).toBe(0);
+
+      // Unpause: exactly one snapshot for the whole flush.
+      act(() => {
+        result.current.setPaused(false);
+      });
+      expect(calls).toBe(1);
+      expect(result.current.events).toHaveLength(3);
     });
 
     it('"log" event with malformed JSON → ignored (no crash)', async () => {
