@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Pause,
@@ -780,7 +780,7 @@ export function LogsContent() {
   const requestIdFilter = searchParams.get("requestId") ?? undefined;
   const [level, setLevel] = useState<LogLevel>("info");
   const [search, setSearch] = useState("");
-  const { events, connected, paused, setPaused, clear, setLevel: setStreamLevel } = useLogStream({
+  const { events, eventSeq, connected, paused, setPaused, clear, setLevel: setStreamLevel } = useLogStream({
     level,
     ...(requestIdFilter ? { requestId: requestIdFilter } : {}),
   });
@@ -788,7 +788,12 @@ export function LogsContent() {
   const scrollRef = useRef<HTMLDivElement>(null);
   // "pinned to top" means user is at scrollTop ≈ 0 and wants to see newest
   const pinnedRef = useRef(true);
-  const prevScrollHeightRef = useRef(0);
+  // DOM anchor captured just before the next render commits — a stable
+  // group-key + its distance below scrollTop. After render we find that
+  // same key and rewrite scrollTop so the anchor lands at the same
+  // viewport offset. Survives top-inserts, bottom-pops, and the
+  // ring-buffer wrap; unaffected by ts collisions.
+  const anchorRef = useRef<{ key: string; distance: number } | null>(null);
 
   const handleLevelChange = useCallback(
     (newLevel: LogLevel) => {
@@ -798,29 +803,63 @@ export function LogsContent() {
     [setStreamLevel],
   );
 
-  // Newest-first: new items prepend at top. When pinned, keep scrollTop at 0.
-  // When NOT pinned, compensate scrollTop so the user's view doesn't jump.
-  // Depend on the tail ts + length so the effect re-runs on every append —
-  // events.length alone stops changing once the ring buffer saturates.
-  const tailTs = events[events.length - 1]?.ts ?? 0;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refs are stable; tailTs + length together cover both growth and post-cap turnover
-  useEffect(() => {
+  // Capture anchor synchronously before React commits (paint blocked).
+  // Skip when pinned — the branch after commit just snaps scrollTop to 0.
+  useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (!el) return;
-
+    if (!el) {
+      anchorRef.current = null;
+      return;
+    }
     if (pinnedRef.current) {
-      // Stay at top — newest items are already at position 0
-      el.scrollTop = 0;
-    } else {
-      // Content was prepended: the scroll container grew at the top.
-      // Compensate so the user's current view stays in place.
-      const growth = el.scrollHeight - prevScrollHeightRef.current;
-      if (growth > 0) {
-        el.scrollTop += growth;
+      anchorRef.current = null;
+      return;
+    }
+    const containerTop = el.getBoundingClientRect().top;
+    const nodes = el.querySelectorAll<HTMLElement>("[data-group-key]");
+    // First group whose bottom sits below the viewport top — that's the
+    // one the user actually sees at the top edge.
+    for (const node of Array.from(nodes)) {
+      const rect = node.getBoundingClientRect();
+      if (rect.bottom > containerTop) {
+        anchorRef.current = {
+          key: node.dataset.groupKey ?? "",
+          distance: rect.top - containerTop,
+        };
+        return;
       }
     }
-    prevScrollHeightRef.current = el.scrollHeight;
-  }, [events.length, tailTs]);
+    anchorRef.current = null;
+  });
+
+  // Apply anchor after commit, before browser paints.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: eventSeq is the intentional trigger; effect closure reads only refs/DOM
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (pinnedRef.current) {
+      el.scrollTop = 0;
+      return;
+    }
+    const anchor = anchorRef.current;
+    if (!anchor?.key) return;
+    const node = el.querySelector<HTMLElement>(
+      `[data-group-key="${CSS.escape(anchor.key)}"]`,
+    );
+    if (!node) {
+      // Anchor group was evicted from the ring buffer. The user's frame
+      // of reference is gone; least-jarring recovery is to leave scrollTop
+      // alone so the surrounding content position drifts naturally with
+      // the layout shift, rather than snapping to top or bottom.
+      return;
+    }
+    const containerTop = el.getBoundingClientRect().top;
+    const nodeTop = node.getBoundingClientRect().top - containerTop;
+    const delta = nodeTop - anchor.distance;
+    if (delta !== 0) {
+      el.scrollTop += delta;
+    }
+  }, [eventSeq]);
 
   // Track whether user is pinned to top
   const handleScroll = useCallback(() => {
@@ -934,11 +973,12 @@ export function LogsContent() {
             ) : (
               <div className="space-y-2 pb-2">
                 {groups.map((group) => (
-                  <EventGroup
-                    key={group.key}
-                    events={group.events}
-                    defaultExpanded={false}
-                  />
+                  <div key={group.key} data-group-key={group.key}>
+                    <EventGroup
+                      events={group.events}
+                      defaultExpanded={false}
+                    />
+                  </div>
                 ))}
               </div>
             )}

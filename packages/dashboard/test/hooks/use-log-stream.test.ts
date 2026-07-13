@@ -210,6 +210,54 @@ describe("useLogStream", () => {
       expect(result.current.events[0]!.msg).toBe("msg-2");
       expect(result.current.events[2]!.msg).toBe("msg-4");
     });
+
+    it("eventSeq increments on each append and keeps advancing past the cap", async () => {
+      const useLogStream = await importHook();
+      const { result } = renderHook(() => useLogStream({ maxEvents: 3 }));
+
+      expect(result.current.eventSeq).toBe(0);
+
+      act(() => {
+        for (let i = 0; i < 3; i++) {
+          lastES().emit("log", makeLogData({ msg: `msg-${i}`, ts: 1000 + i }));
+        }
+      });
+      expect(result.current.eventSeq).toBe(3);
+
+      // Past the cap: length stops changing but eventSeq must keep going,
+      // otherwise consumers can't distinguish "same buffer" from "new event".
+      act(() => {
+        for (let i = 3; i < 6; i++) {
+          lastES().emit("log", makeLogData({ msg: `msg-${i}`, ts: 1000 + i }));
+        }
+      });
+      expect(result.current.events).toHaveLength(3);
+      expect(result.current.eventSeq).toBe(6);
+
+      // Same-ts collisions: still counted independently.
+      act(() => {
+        lastES().emit("log", makeLogData({ msg: "twin-a", ts: 42 }));
+        lastES().emit("log", makeLogData({ msg: "twin-b", ts: 42 }));
+      });
+      expect(result.current.eventSeq).toBe(8);
+    });
+
+    it("clear() bumps eventSeq so consumers re-run their effect", async () => {
+      const useLogStream = await importHook();
+      const { result } = renderHook(() => useLogStream());
+
+      act(() => {
+        lastES().emit("log", makeLogData({ msg: "one" }));
+      });
+      const before = result.current.eventSeq;
+      expect(before).toBe(1);
+
+      act(() => {
+        result.current.clear();
+      });
+      expect(result.current.events).toHaveLength(0);
+      expect(result.current.eventSeq).toBe(before + 1);
+    });
   });
 
   describe("pause/resume", () => {
@@ -251,6 +299,29 @@ describe("useLogStream", () => {
 
       expect(result.current.events).toHaveLength(1);
       expect(result.current.events[0]!.msg).toBe("buffered");
+    });
+
+    it("pause flush bumps eventSeq once per buffered event", async () => {
+      const useLogStream = await importHook();
+      const { result } = renderHook(() => useLogStream());
+
+      act(() => {
+        result.current.setPaused(true);
+      });
+      const seqBeforeBuffer = result.current.eventSeq;
+
+      // Buffered events should NOT change seq until flush
+      act(() => {
+        lastES().emit("log", makeLogData({ msg: "b1" }));
+        lastES().emit("log", makeLogData({ msg: "b2" }));
+        lastES().emit("log", makeLogData({ msg: "b3" }));
+      });
+      expect(result.current.eventSeq).toBe(seqBeforeBuffer);
+
+      act(() => {
+        result.current.setPaused(false);
+      });
+      expect(result.current.eventSeq).toBe(seqBeforeBuffer + 3);
     });
 
     it("buffer flush respects maxEvents cap", async () => {

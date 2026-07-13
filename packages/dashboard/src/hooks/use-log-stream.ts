@@ -37,6 +37,14 @@ interface UseLogStreamOptions {
 
 interface UseLogStreamReturn {
   events: LogEvent[];
+  /**
+   * Monotonically increments on every event append. Consumers that need to
+   * re-run an effect on each new event should depend on `eventSeq` instead
+   * of `events.length` — length saturates once the ring buffer is full and
+   * ts can collide within the same millisecond, so neither is a reliable
+   * change trigger on its own.
+   */
+  eventSeq: number;
   connected: boolean;
   paused: boolean;
   setPaused: (paused: boolean) => void;
@@ -63,6 +71,7 @@ export function useLogStream(
   } = options;
 
   const [events, setEvents] = useState<LogEvent[]>([]);
+  const [eventSeq, setEventSeq] = useState(0);
   const [connected, setConnected] = useState(false);
   const [paused, setPaused] = useState(false);
   const [level, setLevel] = useState<LogLevel>(initialLevel);
@@ -79,6 +88,7 @@ export function useLogStream(
 
   const clear = useCallback(() => {
     setEvents([]);
+    setEventSeq((n) => n + 1);
     pauseBufferRef.current = [];
   }, []);
 
@@ -93,6 +103,7 @@ export function useLogStream(
           ? combined.slice(-maxEvents)
           : combined;
       });
+      setEventSeq((n) => n + buffered.length);
     }
   }, [paused, maxEvents]);
 
@@ -125,6 +136,7 @@ export function useLogStream(
               const next = [...prev, event];
               return next.length > maxEvents ? next.slice(-maxEvents) : next;
             });
+            setEventSeq((n) => n + 1);
           }
         } catch {
           // Ignore malformed events
@@ -180,6 +192,7 @@ export function useLogStream(
 
   return {
     events,
+    eventSeq,
     connected,
     paused,
     setPaused,
