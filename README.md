@@ -292,7 +292,7 @@ Dashboard 支持两种运行模式：
 | `bun run test:perf` | 性能基准测试（翻译层 + SSE 解析） |
 | `bun run test:e2e` | API E2E 测试（需 proxy 运行中 + `RAVEN_API_KEY`，详见下方） |
 | `bun run test:ui` | Playwright UI 测试（自动启动 proxy + dashboard） |
-| `bun run lint` | ESLint 检查 |
+| `bun run lint` | Biome lint（strict parity，warnings 也阻断） |
 | `bun run typecheck` | TypeScript 类型检查 |
 | `bun run gate:security` | 安全门控：osv-scanner + gitleaks |
 | `bun run release` | 发布新版本 |
@@ -352,7 +352,7 @@ curl -s http://localhost:7024/api/keys/<id>/revoke -X POST
 | L2 (API E2E) | 真实 proxy → Copilot API，每测试 1 请求 | 41 | 手动 |
 | L3 (UI E2E) | Playwright dashboard 全流程测试 | 25 | 手动 |
 | Perf | SSE 解析、翻译层基准测试 | — | 手动 |
-| G1 (Static) | ESLint + TypeScript 严格模式 | — | pre-commit |
+| G1 (Static) | Biome (strict parity) + TypeScript 严格模式 | — | pre-commit |
 | G2 (Security) | osv-scanner + gitleaks | — | pre-commit (staged) / pre-push (full) |
 
 ### Git Hooks
@@ -391,7 +391,7 @@ raven/
 ├── docs/                        # 设计文档
 ├── .husky/                      # Git hooks
 ├── .github/workflows/           # CI（GitHub Actions）
-└── eslint.config.js             # 共享 ESLint 配置
+└── biome.json                   # 共享 Biome 配置（lint + import 组织）
 ```
 
 ## 技术栈
@@ -409,7 +409,7 @@ raven/
 | 验证 | [Zod](https://zod.dev/) 4 |
 | 网络代理 | [socks](https://github.com/JoshGlazebrook/socks) (SOCKS5) |
 | 测试 | [Vitest](https://vitest.dev/) + [bun:test](https://bun.sh/docs/test/writing) (E2E/perf) + [Playwright](https://playwright.dev/) |
-| 代码质量 | [ESLint](https://eslint.org/) + [Prettier](https://prettier.io/) + [Husky](https://typicode.github.io/husky/) + [lint-staged](https://github.com/lint-staged/lint-staged) |
+| 代码质量 | [Biome](https://biomejs.dev/) + [Husky](https://typicode.github.io/husky/) + [lint-staged](https://github.com/lint-staged/lint-staged) |
 | 安全扫描 | [osv-scanner](https://google.github.io/osv-scanner/) + [gitleaks](https://github.com/gitleaks/gitleaks) |
 
 ## 开发
