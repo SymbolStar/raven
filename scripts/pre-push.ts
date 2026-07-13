@@ -1,11 +1,14 @@
 /**
- * Pre-push gate runner — parallelizes the three independent gates:
+ * Pre-push gate runner — parallelizes the independent gates:
  *   - G2 security  (osv-scanner + gitleaks; gate-security.ts internally
  *                   runs the two tools in parallel via Promise.all)
  *   - L1 coverage  (proxy unit tests + §4.5 baseline-driven gate)
  *   - G1 arch      (dep-cruiser layering + fetch-boundary)
+ *   - G1 lint      (full biome check over workspaces + scripts;
+ *                   lint-staged only covers staged files so unstaged
+ *                   regressions in scripts/ can slip past pre-commit)
  *
- * All three run concurrently; any failure exits non-zero. Replaces the
+ * All four run concurrently; any failure exits non-zero. Replaces the
  * previous sequential `set -e` pre-push hook so the wall-clock cost is
  * `max(t)` instead of `sum(t)`.
  *
@@ -24,6 +27,7 @@ const tasks: Task[] = [
   { name: "security", gate: "G2", cmd: ["bun", "run", "gate:security"] },
   { name: "coverage", gate: "L1", cmd: ["bun", "run", "--filter", "@raven/proxy", "test"] },
   { name: "arch", gate: "G1", cmd: ["bun", "run", "gate:arch"] },
+  { name: "lint", gate: "G1", cmd: ["bun", "run", "lint"] },
 ];
 
 async function runTask(task: Task): Promise<{ task: Task; ok: boolean; output: string }> {

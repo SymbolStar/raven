@@ -5,7 +5,7 @@
  * `minimumDescriptionLength` default).
  *
  * tseslint's `ban-ts-comment` (strict tier) enforces this. biome 2.5's
- * `noTsIgnore` blocks `@ts-ignore` outright but doesn't require
+ * `noTsIgnore` blocks the ts-ignore directive outright but doesn't require
  * descriptions on `@ts-expect-error`.
  *
  * Uses `oxc-parser`, which surfaces every source-file comment

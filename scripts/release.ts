@@ -19,9 +19,9 @@
  * Adapted from pew/scripts/release.ts for raven monorepo.
  */
 
-import { spawn } from "child_process";
-import { resolve as pathResolve } from "path";
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { spawn } from "node:child_process";
+import { resolve as pathResolve } from "node:path";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -364,9 +364,9 @@ function updateChangelog(newSection: string): void {
 
   let updated: string;
   if (idx === -1) {
-    updated = content.trimEnd() + "\n\n" + newSection + "\n";
+    updated = `${content.trimEnd()}\n\n${newSection}\n`;
   } else {
-    updated = content.slice(0, idx) + newSection + "\n\n" + content.slice(idx);
+    updated = `${content.slice(0, idx) + newSection}\n\n${content.slice(idx)}`;
   }
 
   writeFileSync(CHANGELOG_MD, updated);
@@ -628,7 +628,7 @@ async function main(): Promise<void> {
   }
 
   // Summary
-  console.log("\n" + "=".repeat(50));
+  console.log(`\n${"=".repeat(50)}`);
   console.log(`✅ Released v${newVersion}`);
   console.log(`   📋 Commit:  release: v${newVersion}`);
   console.log(`   🏷️  Tag:     v${newVersion}`);

@@ -42,7 +42,7 @@
  */
 
 import { spawnSync } from "node:child_process"
-import { existsSync, readdirSync, symlinkSync, statSync } from "node:fs"
+import { existsSync, readdirSync, symlinkSync } from "node:fs"
 import { join, relative } from "node:path"
 
 const REPO_ROOT = join(import.meta.dir, "..")
