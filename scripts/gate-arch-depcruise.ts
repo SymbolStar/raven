@@ -47,7 +47,7 @@ import { join, relative } from "node:path"
 
 const REPO_ROOT = join(import.meta.dir, "..")
 
-function locateDepcruiseStore(): string {
+function locateDepcruiseStores(): string[] {
   const bunStore = join(REPO_ROOT, "node_modules", ".bun")
   if (!existsSync(bunStore)) {
     console.error(
@@ -55,16 +55,19 @@ function locateDepcruiseStore(): string {
     )
     process.exit(1)
   }
-  const entry = readdirSync(bunStore).find((name) =>
+  const entries = readdirSync(bunStore).filter((name) =>
     name.startsWith("dependency-cruiser@"),
   )
-  if (!entry) {
+  if (entries.length === 0) {
     console.error(
       "✗ dependency-cruiser is not installed under node_modules/.bun.",
     )
     process.exit(1)
   }
-  return join(bunStore, entry, "node_modules")
+  // Shim every version present. bun may keep an older store copy around
+  // after an upgrade, and .find()-ing the first one can pick the stale
+  // sibling. Cheap to shim them all.
+  return entries.map((entry) => join(bunStore, entry, "node_modules"))
 }
 
 function locateTs6Store(): string {
@@ -84,17 +87,14 @@ function locateTs6Store(): string {
 }
 
 function ensureShim(): void {
-  const depStore = locateDepcruiseStore()
+  const depStores = locateDepcruiseStores()
   const ts6Real = locateTs6Store()
-  const shimPath = join(depStore, "typescript")
-  if (existsSync(shimPath)) {
-    // Idempotent: if it already resolves to some typescript, leave it.
-    // A stale link to TS 7 would only appear if someone hand-edited
-    // the store; the empty-cruise guard below will catch it.
-    return
+  for (const depStore of depStores) {
+    const shimPath = join(depStore, "typescript")
+    if (existsSync(shimPath)) continue
+    const relTarget = relative(depStore, ts6Real)
+    symlinkSync(relTarget, shimPath, "dir")
   }
-  const relTarget = relative(depStore, ts6Real)
-  symlinkSync(relTarget, shimPath, "dir")
 }
 
 ensureShim()
