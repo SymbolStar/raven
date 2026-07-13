@@ -1,33 +1,103 @@
 #!/usr/bin/env bun
 /**
- * Architecture gate — depcruise runner with an empty-cruise guard.
+ * Architecture gate — depcruise runner with TS-6 shim + empty-cruise guard.
  *
- * dependency-cruiser 18.x pins its typescript peer to `>=2 <7`. Our
- * workspace runs typescript 7 (see `build(typescript): finish TS 7
- * upgrade via @typescript/native-preview`). Without a TS-6 copy in
- * the tree depcruise silently drops every .ts file and reports
- * "0 modules, 0 dependencies cruised" — the arch rules never run
- * and violations slip through pre-push and CI.
+ * The problem in two lines:
+ *   - dependency-cruiser@18 peer-requires typescript ">=2 <7".
+ *   - Our root runs typescript@7 for typecheck / IDE.
  *
- * Workaround: root ships a `typescript6-for-depcruise` devDependency
- * (npm alias of typescript@6.0.3) so depcruise can resolve a
- * peer-compatible TS via bun's isolated store. Nothing else picks
- * that alias up — the rest of the toolchain runs on TS 7.
+ * When those two collide, depcruise silently drops every .ts file and
+ * reports "0 modules, 0 dependencies cruised". The gate stays green,
+ * the arch rules never run, violations reach main.
  *
- * This wrapper adds the second half of the fix: hard-fail if the
- * cruise reports zero modules or zero dependencies. That's the same
- * signal a broken parser produced last time and it must not read
- * as green again.
+ * Why a top-level alias isn't enough:
+ *   bun's isolated store puts each package under
+ *   `node_modules/.bun/<name>@<ver>/node_modules/<name>`. When
+ *   depcruise does `createRequire(import.meta.url).resolve("typescript")`,
+ *   the require's root is depcruise's realpath inside `.bun`, and
+ *   Node's upward walk lands in `.bun/typescript@<x>/node_modules/typescript`
+ *   — whichever version bun happened to hoist. Top-level
+ *   `node_modules/typescript` is irrelevant to that walk.
  *
- * When depcruise upstream supports TS 7, delete the alias (from
- * package.json) and simplify this script back to a plain invocation
- * — or fold it into gate:arch directly.
+ *   Fresh `bun install --frozen-lockfile` puts TS 7 at that location,
+ *   so depcruise loses. The old "add an alias" fix worked only by
+ *   accident on incremental installs where the alias happened to be
+ *   the last one hoisted.
+ *
+ * What this wrapper does:
+ *   1. Ensures a symlink at
+ *        node_modules/.bun/dependency-cruiser@<ver>/node_modules/typescript
+ *      pointing at the typescript6-for-depcruise alias's real files.
+ *      Node's resolve algorithm finds this at the very first parent
+ *      of depcruise's own node_modules and stops climbing — TS 7 in
+ *      the store above is never seen.
+ *   2. Runs depcruise and hard-fails if the summary reports 0 modules
+ *      or 0 dependencies. Same failure surface as a broken parser,
+ *      and it must not read as green ever again.
+ *
+ * When depcruise upstream supports TS 7:
+ *   - drop typescript6-for-depcruise from package.json devDependencies
+ *   - delete this shim block and simplify to a plain spawn
+ *   - keep the empty-cruise guard
  */
 
 import { spawnSync } from "node:child_process"
-import { join } from "node:path"
+import { existsSync, readdirSync, symlinkSync, statSync } from "node:fs"
+import { join, relative } from "node:path"
 
 const REPO_ROOT = join(import.meta.dir, "..")
+
+function locateDepcruiseStore(): string {
+  const bunStore = join(REPO_ROOT, "node_modules", ".bun")
+  if (!existsSync(bunStore)) {
+    console.error(
+      "✗ node_modules/.bun not found — did `bun install` complete?",
+    )
+    process.exit(1)
+  }
+  const entry = readdirSync(bunStore).find((name) =>
+    name.startsWith("dependency-cruiser@"),
+  )
+  if (!entry) {
+    console.error(
+      "✗ dependency-cruiser is not installed under node_modules/.bun.",
+    )
+    process.exit(1)
+  }
+  return join(bunStore, entry, "node_modules")
+}
+
+function locateTs6Store(): string {
+  const bunStore = join(REPO_ROOT, "node_modules", ".bun")
+  const entry = readdirSync(bunStore).find(
+    (name) => name === "typescript@6.0.3",
+  )
+  if (!entry) {
+    console.error(
+      "✗ typescript@6.0.3 not found under node_modules/.bun.\n" +
+        "  The typescript6-for-depcruise devDependency must be installed;\n" +
+        "  see package.json.",
+    )
+    process.exit(1)
+  }
+  return join(bunStore, entry, "node_modules", "typescript")
+}
+
+function ensureShim(): void {
+  const depStore = locateDepcruiseStore()
+  const ts6Real = locateTs6Store()
+  const shimPath = join(depStore, "typescript")
+  if (existsSync(shimPath)) {
+    // Idempotent: if it already resolves to some typescript, leave it.
+    // A stale link to TS 7 would only appear if someone hand-edited
+    // the store; the empty-cruise guard below will catch it.
+    return
+  }
+  const relTarget = relative(depStore, ts6Real)
+  symlinkSync(relTarget, shimPath, "dir")
+}
+
+ensureShim()
 
 const proc = spawnSync(
   "bunx",
@@ -53,8 +123,11 @@ if (modules === 0 || deps === 0) {
   console.error(
     `✗ depcruise cruised ${modules} modules / ${deps} dependencies.\n` +
       "  The TypeScript parser is disabled — arch rules did not run.\n" +
-      "  Check that `typescript6-for-depcruise` is installed (see package.json)\n" +
-      "  and that `bunx depcruise -i` reports a ✔ for typescript.",
+      "  Verify:\n" +
+      "    - typescript6-for-depcruise is in package.json devDependencies\n" +
+      "    - `bunx depcruise -i` reports ✔ for typescript@6.x\n" +
+      "    - node_modules/.bun/dependency-cruiser@*/node_modules/typescript\n" +
+      "      exists and points at .bun/typescript@6.0.3/...",
   )
   process.exit(1)
 }
