@@ -147,7 +147,7 @@ export function RequestTable({
   function SortButton({ column, children }: { column: SortColumn; children: React.ReactNode }) {
     const isActive = currentSort === column;
     return (
-      <button
+      <button type="button"
         onClick={() => toggleSort(column)}
         className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
       >

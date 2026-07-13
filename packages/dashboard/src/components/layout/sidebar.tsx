@@ -230,6 +230,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
           <div className="flex h-screen w-[68px] flex-col items-center">
             {/* Logo */}
             <div className="flex h-14 w-full items-center justify-start pl-6 pr-3">
+              {/* biome-ignore lint/performance/noImgElement: static local 24px logo, next/image adds no benefit */}
               <img
                 src="/logo-24.png"
                 alt="Raven"
@@ -242,7 +243,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
             {/* Expand toggle */}
             <Tooltip>
               <TooltipTrigger asChild>
-                <button
+                <button type="button"
                   onClick={toggle}
                   aria-label="Expand sidebar"
                   className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors mb-2"
@@ -292,7 +293,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
               {showAsAuth ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <button
+                    <button type="button"
                       onClick={() => signOut({ callbackUrl: "/login" })}
                       aria-label="Sign out"
                       className="cursor-pointer"
@@ -334,6 +335,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
             <div className="px-3 h-14 flex items-center">
               <div className="flex w-full items-center justify-between px-3">
                 <div className="flex items-center gap-3">
+                  {/* biome-ignore lint/performance/noImgElement: static local 24px logo, next/image adds no benefit */}
                   <img
                     src="/logo-24.png"
                     alt="Raven"
@@ -349,7 +351,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
                     v{APP_VERSION}
                   </Badge>
                 </div>
-                <button
+                <button type="button"
                   onClick={toggle}
                   aria-label="Collapse sidebar"
                   className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:text-foreground transition-colors"
@@ -387,7 +389,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
                 {showAsAuth && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button
+                      <button type="button"
                         onClick={() => signOut({ callbackUrl: "/login" })}
                         aria-label="Sign out"
                         className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors shrink-0"

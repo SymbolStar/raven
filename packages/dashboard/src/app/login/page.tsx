@@ -14,6 +14,7 @@ function Barcode() {
     <div className="flex items-stretch gap-[1.5px] h-full">
       {bars.map((w, i) => (
         <div
+          // biome-ignore lint/suspicious/noArrayIndexKey: static decorative array, never reordered
           key={i}
           className="rounded-[0.5px] bg-primary-foreground"
           style={{ width: `${w * 1.5}px`, opacity: i % 3 === 0 ? 0.9 : 0.5 }}
@@ -113,6 +114,7 @@ function LoginContent() {
           <div className="flex flex-1 flex-col items-center px-6 pt-6 pb-14">
             {/* Logo */}
             <div className="h-24 w-24 overflow-hidden rounded-full bg-secondary dark:bg-[#171717] ring-1 ring-border p-2.5">
+              {/* biome-ignore lint/performance/noImgElement: static local logo, next/image adds no measurable benefit for a 96px asset */}
               <img
                 src="/logo-80.png"
                 alt="Raven"
@@ -145,7 +147,7 @@ function LoginContent() {
             <div className="flex-1" />
 
             {/* Google Sign-in button */}
-            <button
+            <button type="button"
               onClick={handleGoogleLogin}
               className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-secondary px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-accent cursor-pointer"
             >

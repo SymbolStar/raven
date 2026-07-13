@@ -75,7 +75,7 @@ export function ColumnConfig({ visibleColumns, onToggle }: ColumnConfigProps) {
               Toggle columns
             </div>
             {ALL_COLUMNS.map((col) => (
-              <button
+              <button type="button"
                 key={col.key}
                 onClick={() => onToggle(col.key)}
                 className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent transition-colors"

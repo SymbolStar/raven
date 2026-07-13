@@ -101,7 +101,14 @@ function QuotaRing({ percent, unlimited }: { percent: number; unlimited: boolean
 
   return (
     <div className="relative flex items-center justify-center" style={{ width: RING_SIZE, height: RING_SIZE }}>
-      <svg width={RING_SIZE} height={RING_SIZE} className="-rotate-90">
+      <svg
+        width={RING_SIZE}
+        height={RING_SIZE}
+        className="-rotate-90"
+        role="img"
+        aria-label={unlimited ? "Unlimited quota" : `Quota usage ${clamped.toFixed(0)}%`}
+      >
+        <title>{unlimited ? "Unlimited quota" : `Quota usage ${clamped.toFixed(0)}%`}</title>
         {/* Background track */}
         <circle
           cx={RING_SIZE / 2}

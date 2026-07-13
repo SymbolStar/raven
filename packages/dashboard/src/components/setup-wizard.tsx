@@ -47,6 +47,7 @@ function StepIndicator({
         const isDone = i < current;
 
         return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: step index is intrinsically stable — steps never reorder
           <div key={i} className="flex items-center">
             {/* Circle */}
             <div

@@ -43,6 +43,7 @@ export default function RootLayout({
         <Script
           id="theme-init"
           strategy="beforeInteractive"
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: static inline theme-init script; content is a literal, no user input flows here
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var s=localStorage.getItem("theme");var d=window.matchMedia("(prefers-color-scheme:dark)").matches;if(s==="dark"||(s!=="light"&&d))document.documentElement.classList.add("dark")}catch(e){}})()`,
           }}

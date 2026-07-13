@@ -119,11 +119,11 @@ export const RetryBar = memo(function RetryBar({ stacks }: RetryBarProps) {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-x-3 gap-y-1 shrink-0">
+      <ul className="grid grid-cols-2 gap-x-3 gap-y-1 shrink-0 list-none m-0 p-0">
         {segments.map((s) => {
           const pct = computePercent(s.value, total);
           return (
-            <div
+            <li
               key={s.key}
               className="flex items-center gap-2 text-meta"
               aria-label={`${s.label}: ${s.value} (${pct}%)`}
@@ -142,10 +142,10 @@ export const RetryBar = memo(function RetryBar({ stacks }: RetryBarProps) {
               <span className="tabular-nums text-muted-foreground/70 w-8 text-right">
                 {pct}%
               </span>
-            </div>
+            </li>
           );
         })}
-      </div>
+      </ul>
     </div>
   );
 });

@@ -106,31 +106,33 @@ export const OccurrencesDonut = memo(function OccurrencesDonut({
             No 401s recorded
           </p>
         ) : (
-          slices.map((s) => {
-            const pct = computePercent(s.value, total);
-            return (
-              <div
-                key={s.key}
-                className="flex items-center gap-2 text-meta"
-                aria-label={`${s.label}: ${s.value} (${pct}%)`}
-              >
-                <span
-                  aria-hidden
-                  className="inline-block h-2 w-2 rounded-full shrink-0"
-                  style={{ background: s.color }}
-                />
-                <span className="text-muted-foreground flex-1 truncate">
-                  {s.label}
-                </span>
-                <span className="tabular-nums text-foreground">
-                  {s.value.toLocaleString()}
-                </span>
-                <span className="tabular-nums text-muted-foreground/70 w-9 text-right">
-                  {pct}%
-                </span>
-              </div>
-            );
-          })
+          <ul className="space-y-1 list-none m-0 p-0">
+            {slices.map((s) => {
+              const pct = computePercent(s.value, total);
+              return (
+                <li
+                  key={s.key}
+                  className="flex items-center gap-2 text-meta"
+                  aria-label={`${s.label}: ${s.value} (${pct}%)`}
+                >
+                  <span
+                    aria-hidden
+                    className="inline-block h-2 w-2 rounded-full shrink-0"
+                    style={{ background: s.color }}
+                  />
+                  <span className="text-muted-foreground flex-1 truncate">
+                    {s.label}
+                  </span>
+                  <span className="tabular-nums text-foreground">
+                    {s.value.toLocaleString()}
+                  </span>
+                  <span className="tabular-nums text-muted-foreground/70 w-9 text-right">
+                    {pct}%
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </div>
     </div>

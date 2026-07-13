@@ -179,7 +179,7 @@ console.log(message.content);`,
       <div className="rounded-card bg-secondary overflow-hidden">
         <div className="flex border-b border-border/30 bg-background/50">
           {tabs.map((tab) => (
-            <button
+            <button type="button"
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={cn(
@@ -222,7 +222,7 @@ function SetupGuidesSection({ baseUrl }: { baseUrl: string }) {
       <div className="rounded-card bg-secondary overflow-hidden">
         <div className="flex border-b border-border/30 bg-background/50">
           {tabs.map((tab) => (
-            <button
+            <button type="button"
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={cn(

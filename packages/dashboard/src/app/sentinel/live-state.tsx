@@ -30,6 +30,7 @@ function ModeBadge({ mode }: ModeBadgeProps) {
   return (
     <span
       className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${fg} ${bg}`}
+      role="status"
       aria-label={`Sentinel mode: ${label}`}
     >
       {label}
@@ -75,7 +76,8 @@ function SignalGauge({ score }: { score: number }) {
       role="img"
       aria-label={`Signal score: ${clamped} of ${SIGNAL_MAX} (threshold ${SIGNAL_THRESHOLD})`}
     >
-      <svg viewBox="0 0 160 88" width={160} height={88}>
+      <svg viewBox="0 0 160 88" width={160} height={88} role="img" aria-hidden="true">
+        <title>{`Signal score: ${clamped} of ${SIGNAL_MAX}`}</title>
         <path
           d={bgPath}
           stroke="hsl(var(--chart-muted))"

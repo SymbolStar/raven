@@ -35,7 +35,7 @@ function CopyButton({ text }: { text: string }) {
   }, [text]);
 
   return (
-    <button
+    <button type="button"
       onClick={handleCopy}
       className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
       aria-label={`Copy ${text}`}
@@ -189,8 +189,8 @@ export function CopilotModelsContent({ data }: CopilotModelsContentProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {models.map((model, i) => (
-                  <TableRow key={`${model.id}-${i}`}>
+                {models.map((model) => (
+                  <TableRow key={model.id}>
                     <TableCell className="truncate">
                       <span className="inline-flex items-center gap-1.5 max-w-full">
                         <span className="font-mono text-xs truncate">{model.id}</span>

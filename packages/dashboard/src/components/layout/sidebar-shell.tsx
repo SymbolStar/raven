@@ -20,6 +20,7 @@ function SidebarShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   // Close mobile sidebar on route change
+  // biome-ignore lint/correctness/useExhaustiveDependencies: pathname is the trigger; setMobileOpen is stable
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname, setMobileOpen]);
@@ -77,7 +78,7 @@ export function MobileMenuButton() {
   const { setMobileOpen } = useSidebar();
 
   return (
-    <button
+    <button type="button"
       onClick={() => setMobileOpen(true)}
       aria-label="Open navigation menu"
       className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors md:hidden"
