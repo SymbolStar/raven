@@ -93,7 +93,7 @@ bun run test:ui     # Playwright dashboard smoke tests (auto-starts both servers
 
 **L3 (UI E2E)**: `bun run test:ui` — 25 Playwright tests across 5 specs for dashboard. Auto-starts proxy + dashboard. Manual only.
 
-**G1 (Static Analysis)**: Both packages pass `eslint` and `tsc --noEmit` (with strict extras) with 0 errors, 0 warnings. Pre-commit runs lint-staged (incremental) + full typecheck.
+**G1 (Static Analysis)**: Both packages pass `biome check` and `tsc --noEmit` (with strict extras) with 0 errors, 0 warnings. Biome lints `src/` + `test/` in one pass (config: `biome.json`). Pre-commit runs lint-staged (biome, incremental) + full typecheck.
 
 **G2 (Security)**: `bun run gate:security` — osv-scanner + gitleaks. gitleaks runs at pre-commit (staged-only); full G2 runs at pre-push. CI runs both.
 
