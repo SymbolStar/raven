@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start -p 7023",
     "lint": "biome check --no-errors-on-unmatched --error-on-warnings --max-diagnostics=500 src test",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "bun ../../node_modules/typescript7/bin/tsc --noEmit",
     "test": "vitest run --coverage",
     "test:watch": "vitest"
   },
