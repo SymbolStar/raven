@@ -340,7 +340,11 @@ function PhaseDetail({
       {phaseEvents.map((ev, i) => {
         const data = ev.data ? { ...ev.data } : null;
         return (
-          <div key={i} className="space-y-1">
+          <div
+            // biome-ignore lint/suspicious/noArrayIndexKey: index disambiguates events with the same ts
+            key={`${ev.ts}-${i}`}
+            className="space-y-1"
+          >
             <p className="text-muted-foreground">{ev.msg}</p>
             {data && Object.keys(data).length > 0 && (
               <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[10px]">
@@ -660,7 +664,11 @@ function RequestCard({
             </div>
           )}
           {errorEvents.map((ev, i) => (
-            <div key={i} className="mt-2 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            <div
+              // biome-ignore lint/suspicious/noArrayIndexKey: index disambiguates errors with the same ts
+              key={`${ev.ts}-${i}`}
+              className="mt-2 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+            >
               {(ev.data?.error as string) ?? ev.msg}
             </div>
           ))}
@@ -696,6 +704,7 @@ function RequestCard({
             {expanded && (
               <div id={`raw-events-${startEvent?.requestId?.slice(0, 8) ?? "unknown"}`} className="border-t border-border bg-background px-3 py-2 space-y-1">
                 {events.map((event, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: index disambiguates events sharing the same ts
                   <RawEventLine key={`${event.ts}-${i}`} event={event} />
                 ))}
               </div>
@@ -741,7 +750,6 @@ function getRawBadge(event: LogEvent): { variant: BadgeVariant; label: string } 
     }
     case "upstream_error": return { variant: "destructive", label: "ERR" };
     case "sse_chunk": return { variant: "purple", label: "SSE" };
-    case "system":
     default: return { variant: "secondary", label: "SYS" };
   }
 }
@@ -792,6 +800,7 @@ export function LogsContent() {
 
   // Newest-first: new items prepend at top. When pinned, keep scrollTop at 0.
   // When NOT pinned, compensate scrollTop so the user's view doesn't jump.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: events.length is the trigger; scrollRef/pinnedRef/prevScrollHeightRef are stable refs
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;

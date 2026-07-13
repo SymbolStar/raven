@@ -377,6 +377,7 @@ export function useConcurrencyTimeline(events: LogEvent[]): ConcurrencyBucket[] 
   const minuteTick = useMinuteTick();
   // minuteTick forces re-computation every minute so in-progress requests
   // extend their timeline to the current minute even without new events.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: minuteTick is intentionally in deps to trigger periodic re-runs
   return useMemo(() => computeConcurrencyTimeline(events), [events, minuteTick]);
 }
 

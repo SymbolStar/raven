@@ -156,6 +156,7 @@ export function JsonBlock({ value, maxHeightClass = "max-h-48", className }: Jso
       >
         <code>
           {tokens.map((t, idx) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: tokens are a memoized linear stream, order is intrinsic
             <span key={idx} className={TOKEN_CLASSES[t.kind]}>
               {t.text}
             </span>
