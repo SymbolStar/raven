@@ -212,7 +212,7 @@ export function translateToOpenAI(
   const tools = translateAnthropicToolsToOpenAI(payload.tools) || undefined
   const toolChoice = translateAnthropicToolChoiceToOpenAI(payload.tool_choice) || undefined
 
-  let reasoning_effort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined 
+  let reasoning_effort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined
   if (options?.targetFormat === "openai-reasoning" && payload.thinking?.type === "enabled") {
     const budget = payload.thinking.budget_tokens ?? 0
     reasoning_effort = budget >= 10000 ? "high" : budget >= 5000 ? "medium" : budget >= 2000 ? "low" : "minimal"
