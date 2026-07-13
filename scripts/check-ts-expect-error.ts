@@ -8,13 +8,15 @@
  * `noTsIgnore` blocks `@ts-ignore` outright but doesn't require
  * descriptions on `@ts-expect-error`.
  *
- * Uses the TypeScript scanner so it handles line comments, block
- * comments, and multi-line block-comment descriptions uniformly.
+ * Uses `oxc-parser`, which surfaces every source-file comment
+ * (line + block) with precise position info — the TypeScript 7
+ * (native / preview) module ships in a "not ready" state and no
+ * longer exposes a standalone `createScanner`.
  */
 
 import { readFileSync } from "node:fs"
 import { join, relative } from "node:path"
-import ts from "typescript"
+import { parseSync } from "oxc-parser"
 
 const ROOTS = [
   join(import.meta.dir, "..", "packages", "proxy", "src"),
@@ -32,61 +34,49 @@ interface Violation {
   found: string
 }
 
+interface OxcComment {
+  type: "Line" | "Block"
+  value: string
+  start: number
+  end: number
+}
+
+function posToLine(src: string, pos: number): number {
+  let line = 1
+  for (let i = 0; i < pos && i < src.length; i++) if (src.charCodeAt(i) === 10) line++
+  return line
+}
+
 function scanFile(path: string, src: string): Violation[] {
   const violations: Violation[] = []
-  const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, undefined, src)
-  const lineStarts = ts.computeLineStarts(src)
-
-  const posToLine = (pos: number) => {
-    // Binary search for the last lineStart ≤ pos.
-    let lo = 0
-    let hi = lineStarts.length - 1
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >> 1
-      if (lineStarts[mid]! <= pos) lo = mid
-      else hi = mid - 1
+  const r = parseSync(path, src)
+  if (r.errors.length > 0) {
+    for (const err of r.errors) {
+      console.error(`✗ parse error ${path}: ${err.message}`)
     }
-    return lo + 1
+    process.exit(1)
   }
+  const comments = (r.comments ?? []) as unknown as OxcComment[]
 
-  let token = scanner.scan()
-  while (token !== ts.SyntaxKind.EndOfFileToken) {
-    if (
-      token === ts.SyntaxKind.SingleLineCommentTrivia ||
-      token === ts.SyntaxKind.MultiLineCommentTrivia
-    ) {
-      const text = scanner.getTokenText()
-      const idx = text.indexOf("@ts-expect-error")
-      if (idx !== -1) {
-        // Everything after the directive is the description.
-        let rest = text.slice(idx + "@ts-expect-error".length)
-        // Strip trailing "*/" for block comments.
-        if (token === ts.SyntaxKind.MultiLineCommentTrivia) {
-          rest = rest.replace(/\*\/\s*$/, "")
-          // Strip leading whitespace/`*` on each subsequent line so a
-          // multi-line block description reads as flat text.
-          rest = rest.replace(/\n\s*\*?/g, " ")
-        }
-        // Strip common separators (`-`, `–`, `—`, `:`) once, then trim.
-        rest = rest.replace(/^\s*[-–—:]?\s*/, "").trim()
-        if (rest.length === 0) {
-          violations.push({
-            path,
-            line: posToLine(scanner.getTokenPos()),
-            reason: "missing",
-            found: "",
-          })
-        } else if (rest.length < MIN_LENGTH) {
-          violations.push({
-            path,
-            line: posToLine(scanner.getTokenPos()),
-            reason: "too_short",
-            found: rest,
-          })
-        }
-      }
+  for (const c of comments) {
+    const idx = c.value.indexOf("@ts-expect-error")
+    if (idx === -1) continue
+    let rest = c.value.slice(idx + "@ts-expect-error".length)
+    // Block comments have leading `*` on subsequent lines — collapse
+    // multi-line reasons to flat text.
+    if (c.type === "Block") rest = rest.replace(/\n\s*\*?/g, " ")
+    // Strip the common leading separator (`-`, `–`, `—`, `:`) once.
+    rest = rest.replace(/^\s*[-–—:]?\s*/, "").trim()
+    if (rest.length === 0) {
+      violations.push({ path, line: posToLine(src, c.start), reason: "missing", found: "" })
+    } else if (rest.length < MIN_LENGTH) {
+      violations.push({
+        path,
+        line: posToLine(src, c.start),
+        reason: "too_short",
+        found: rest,
+      })
     }
-    token = scanner.scan()
   }
 
   return violations
@@ -96,7 +86,7 @@ async function main(): Promise<void> {
   const violations: Violation[] = []
   const { readdir, stat } = await import("node:fs/promises")
 
-  async function walk(dir: string) {
+  async function walk(dir: string): Promise<void> {
     let entries: string[]
     try {
       entries = await readdir(dir)

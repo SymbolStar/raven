@@ -7,10 +7,12 @@
  * (strict tier) blocks `delete obj[computed]` but permits
  * `delete obj.staticName` and `delete obj["static-literal"]`.
  *
- * Uses the TypeScript compiler API: earlier regex-based versions of
- * this check missed `delete value.nested[key]`, `delete x?.y[k]`,
- * multi-line delete expressions, and anything the tokenizer split
- * across the line. AST traversal makes the rule position-independent.
+ * Uses `oxc-parser` (Rust-native, ESTree AST) rather than the
+ * `typescript` compiler API. Reason: TypeScript 7 (native / preview)
+ * has "not ready" status for its consumer API and no longer exposes
+ * a standalone `createSourceFile` / `forEachChild`. oxc gives us a
+ * stable single-file parse that works regardless of what typescript
+ * version tsc itself is at.
  *
  * biome 2.5 has no equivalent — `noDelete` is a blanket ban and
  * would fire on legitimate `Record<string, unknown>` deletes. This
@@ -21,7 +23,7 @@
 
 import { readFileSync } from "node:fs"
 import { join, relative } from "node:path"
-import ts from "typescript"
+import { parseSync } from "oxc-parser"
 
 const ROOTS = [
   join(import.meta.dir, "..", "packages", "proxy", "src"),
@@ -40,55 +42,102 @@ interface Violation {
   snippet: string
 }
 
-/**
- * Walk into whichever member-expression sits at the tail end of
- * chained/parenthesised access. Returns true if the deepest access is
- * computed with a non-literal key — that's the shape tseslint bans.
- */
-function isDynamicComputedTail(expr: ts.Expression): boolean {
-  // Peel parens.
-  let cur: ts.Node = expr
-  while (ts.isParenthesizedExpression(cur)) cur = cur.expression
+interface Loc {
+  line: number
+  column: number
+}
 
-  if (!ts.isElementAccessExpression(cur)) return false
-  const arg = cur.argumentExpression
-  // Static literals are fine — TS still tracks the property.
-  if (ts.isStringLiteralLike(arg) || ts.isNumericLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) {
-    return false
+interface OxcNode {
+  type: string
+  start?: number
+  end?: number
+  loc?: { start: Loc; end: Loc }
+  operator?: string
+  argument?: OxcNode
+  expression?: OxcNode
+  object?: OxcNode
+  property?: OxcNode
+  computed?: boolean
+  [key: string]: unknown
+}
+
+/**
+ * Given a member-access chain, does the deepest access use a computed
+ * non-literal key? That's the shape tseslint bans. Static string /
+ * numeric literals are permitted.
+ */
+function isDynamicComputedTail(expr: OxcNode | undefined): boolean {
+  if (!expr) return false
+  let cur = expr
+  // Peel wrappers: parens, non-null assertions, and optional-chain
+  // wrappers all keep the tail member access underneath.
+  while (
+    cur.type === "ParenthesizedExpression" ||
+    cur.type === "TSNonNullExpression" ||
+    cur.type === "ChainExpression"
+  ) {
+    cur = cur.expression as OxcNode
+  }
+  if (cur.type !== "MemberExpression") return false
+  if (!cur.computed) return false
+  const prop = cur.property
+  if (!prop) return false
+  // Static literals: string, number, template-with-no-substitutions
+  if (prop.type === "Literal") return false
+  if (prop.type === "TemplateLiteral") {
+    const q = prop as unknown as { expressions: unknown[] }
+    if (Array.isArray(q.expressions) && q.expressions.length === 0) return false
   }
   return true
 }
 
-/**
- * A DeleteExpression whose ultimate target is an ElementAccess with a
- * non-literal key. Nested paths like `delete a.b.c[k]` and
- * `delete a?.b[k]` all funnel through here.
- */
-function collectFromNode(
-  node: ts.Node,
-  file: ts.SourceFile,
-  path: string,
-  out: Violation[],
-): void {
-  if (ts.isDeleteExpression(node)) {
-    if (isDynamicComputedTail(node.expression)) {
-      const start = file.getLineAndCharacterOfPosition(node.getStart(file))
+function collect(node: OxcNode | null | undefined, path: string, src: string, out: Violation[]): void {
+  if (!node || typeof node !== "object") return
+  if (node.type === "UnaryExpression" && node.operator === "delete") {
+    if (isDynamicComputedTail(node.argument)) {
+      const startPos = node.start ?? 0
+      const line = node.loc?.start.line ?? posToLine(src, startPos)
+      const col = node.loc?.start.column ?? posToCol(src, startPos)
+      const endPos = node.end ?? startPos
       out.push({
         path,
-        line: start.line + 1,
-        col: start.character + 1,
-        snippet: node.getText(file).split("\n")[0]!.trim(),
+        line,
+        col: col + 1,
+        snippet: src.slice(startPos, endPos).split("\n")[0]!.trim(),
       })
     }
   }
-  ts.forEachChild(node, (child) => collectFromNode(child, file, path, out))
+  for (const key in node) {
+    if (key === "loc" || key === "start" || key === "end" || key === "type") continue
+    const value = (node as Record<string, unknown>)[key]
+    if (Array.isArray(value)) {
+      for (const item of value) collect(item as OxcNode, path, src, out)
+    } else if (value && typeof value === "object" && "type" in (value as object)) {
+      collect(value as OxcNode, path, src, out)
+    }
+  }
+}
+
+function posToLine(src: string, pos: number): number {
+  let line = 1
+  for (let i = 0; i < pos && i < src.length; i++) if (src.charCodeAt(i) === 10) line++
+  return line
+}
+
+function posToCol(src: string, pos: number): number {
+  let col = 0
+  for (let i = pos - 1; i >= 0; i--) {
+    if (src.charCodeAt(i) === 10) break
+    col++
+  }
+  return col
 }
 
 async function main(): Promise<void> {
   const violations: Violation[] = []
   const { readdir, stat } = await import("node:fs/promises")
 
-  async function walk(dir: string) {
+  async function walk(dir: string): Promise<void> {
     let entries: string[]
     try {
       entries = await readdir(dir)
@@ -105,9 +154,16 @@ async function main(): Promise<void> {
         const repoRel = relative(join(import.meta.dir, ".."), full)
         if (repoRel in ALLOWED) continue
         const src = readFileSync(full, "utf-8")
-        const scriptKind = name.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
-        const file = ts.createSourceFile(full, src, ts.ScriptTarget.Latest, false, scriptKind)
-        collectFromNode(file, file, repoRel, violations)
+        const r = parseSync(full, src)
+        if (r.errors.length > 0) {
+          // Parse errors: report the file so we don't silently ignore
+          // broken sources. oxc's diagnostics carry line/col.
+          for (const err of r.errors) {
+            console.error(`✗ parse error ${repoRel}: ${err.message}`)
+          }
+          process.exit(1)
+        }
+        collect(r.program as unknown as OxcNode, repoRel, src, violations)
       }
     }
   }
