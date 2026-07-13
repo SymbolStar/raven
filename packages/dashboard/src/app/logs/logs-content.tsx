@@ -800,7 +800,10 @@ export function LogsContent() {
 
   // Newest-first: new items prepend at top. When pinned, keep scrollTop at 0.
   // When NOT pinned, compensate scrollTop so the user's view doesn't jump.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: events.length is the trigger; scrollRef/pinnedRef/prevScrollHeightRef are stable refs
+  // Depend on the tail ts + length so the effect re-runs on every append —
+  // events.length alone stops changing once the ring buffer saturates.
+  const tailTs = events[events.length - 1]?.ts ?? 0;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refs are stable; tailTs + length together cover both growth and post-cap turnover
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -817,7 +820,7 @@ export function LogsContent() {
       }
     }
     prevScrollHeightRef.current = el.scrollHeight;
-  }, [events.length]);
+  }, [events.length, tailTs]);
 
   // Track whether user is pinned to top
   const handleScroll = useCallback(() => {
