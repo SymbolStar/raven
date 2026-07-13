@@ -266,6 +266,7 @@ describe("core/runner — JSON path", () => {
     const s = makeStrategy({
       dispatch: async () => ({
         kind: "stream",
+        // biome-ignore lint/correctness/useYield: generator throws immediately to simulate a mid-stream failure
         chunks: (async function* () {
           throw new Error("boom")
         })(),

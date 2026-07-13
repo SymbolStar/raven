@@ -24,7 +24,8 @@ class MockEventSource {
   }
 
   addEventListener(type: string, handler: ESListener) {
-    (this.listeners[type] ??= []).push(handler);
+    this.listeners[type] ??= [];
+    this.listeners[type].push(handler);
   }
 
   removeEventListener(type: string, handler: ESListener) {

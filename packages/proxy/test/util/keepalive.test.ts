@@ -32,7 +32,7 @@ let realSetInterval: typeof setInterval
 let realClearInterval: typeof clearInterval
 
 describe("startKeepalive", () => {
-  let timers: { cb: Function; ms: number; id: number }[]
+  let timers: { cb: (...args: unknown[]) => void; ms: number; id: number }[]
   let nextId: number
 
   beforeEach(() => {
@@ -41,13 +41,13 @@ describe("startKeepalive", () => {
     realSetInterval = globalThis.setInterval
     realClearInterval = globalThis.clearInterval
 
-    // @ts-ignore – override for testing
-    globalThis.setInterval = (cb: Function, ms: number) => {
+    // @ts-expect-error – override for testing
+    globalThis.setInterval = (cb: (...args: unknown[]) => void, ms: number) => {
       const id = nextId++
       timers.push({ cb, ms, id })
       return id as any
     }
-    // @ts-ignore
+    // @ts-expect-error
     globalThis.clearInterval = (id: number) => {
       timers = timers.filter((t) => t.id !== id)
     }

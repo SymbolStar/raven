@@ -591,7 +591,7 @@ describe("tools translation", () => {
     )
 
     expect(result.tools).toHaveLength(1)
-    expect(result.tools?.[0]!.function.name).toBe("my_tool")
+    expect(result.tools![0]!.function.name).toBe("my_tool")
   })
 
   test("tools without type field are translated correctly", () => {
@@ -608,7 +608,7 @@ describe("tools translation", () => {
     )
 
     expect(result.tools).toHaveLength(1)
-    expect(result.tools?.[0]!.function.name).toBe("legacy_tool")
+    expect(result.tools![0]!.function.name).toBe("legacy_tool")
   })
 })
 

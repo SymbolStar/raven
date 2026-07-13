@@ -10,7 +10,7 @@
     "test:watch": "bunx --bun vitest",
     "test:e2e": "bun test test/e2e/",
     "test:perf": "bun test test/perf/",
-    "lint": "eslint --config ../../eslint.config.js --max-warnings=0 src/",
+    "lint": "biome check --no-errors-on-unmatched --max-diagnostics=500 src test",
     "typecheck": "bunx tsc --noEmit"
   },
   "dependencies": {

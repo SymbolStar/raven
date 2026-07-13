@@ -507,7 +507,6 @@ describe("POST /api/settings/socks5/test", () => {
           const req = Buffer.from(rawReq);
           const atyp = req[3]!;
           let targetHost: string;
-          let targetPort: number;
           let offset: number;
           if (atyp === 0x03) {
             const domainLen = req[4]!;
@@ -520,7 +519,7 @@ describe("POST /api/settings/socks5/test", () => {
             client.destroy();
             return;
           }
-          targetPort = (req[offset]! << 8) | req[offset + 1]!;
+          const targetPort = (req[offset]! << 8) | req[offset + 1]!;
 
           const upstream = net.createConnection({ host: targetHost, port: targetPort }, () => {
             const reply = Buffer.from([0x05, 0x00, 0x00, 0x01, 127, 0, 0, 1, 0, 0]);

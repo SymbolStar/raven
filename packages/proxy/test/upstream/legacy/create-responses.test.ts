@@ -10,7 +10,6 @@ import { state } from "../../../src/lib/state"
 import { HTTPError } from "../../../src/lib/error"
 
 const createResponses = (payload: ResponsesPayload) =>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   new CopilotResponsesClient(defaultCopilotResponsesConfig()).send(payload) as Promise<any>
 
 // ---------------------------------------------------------------------------

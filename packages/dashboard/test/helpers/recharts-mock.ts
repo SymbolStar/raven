@@ -24,7 +24,8 @@ type AnyProps = Record<string, unknown> & { children?: React.ReactNode };
 
 // Re-exported as a vi.mock factory so test files can compose it.
 export function rechartsMockFactory() {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  // vi.mock factories run before ES imports resolve, so require() is
+  // the only way to grab React at factory-invocation time.
   const ReactImpl: typeof React = require("react");
 
   const MockResponsiveContainer = ({ children }: AnyProps) =>

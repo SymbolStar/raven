@@ -6,7 +6,7 @@
     "dev": "next dev -p 7023",
     "build": "next build",
     "start": "next start -p 7023",
-    "lint": "eslint --config ../../eslint.config.js --max-warnings=0 src/",
+    "lint": "biome check --no-errors-on-unmatched --max-diagnostics=500 src test",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
     "test:watch": "vitest"
@@ -36,7 +36,6 @@
     "@types/react-dom": "^19.1.2",
     "@vitejs/plugin-react": "^6.0.3",
     "@vitest/coverage-v8": "4.1.10",
-    "eslint-config-next": "16.2.10",
     "jsdom": "^29.0.0",
     "tailwindcss": "^4.3.2",
     "typescript": "6.0.3",
