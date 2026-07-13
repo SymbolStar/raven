@@ -125,5 +125,5 @@ export function parseGoldenFixture(raw: string): GoldenFixture {
  *  trailing newline so `git diff` on re-captures shows minimal churn. */
 export function serialiseGoldenFixture(f: GoldenFixture): string {
   assertGoldenFixture(f) // catch drift at serialise time, not at load
-  return JSON.stringify(f, null, 2) + "\n"
+  return `${JSON.stringify(f, null, 2)}\n`
 }

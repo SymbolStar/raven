@@ -1,8 +1,8 @@
-import { type ChatCompletionChunk } from "../../upstream/copilot-openai"
+import type { ChatCompletionChunk } from "../../upstream/copilot-openai"
 
-import {
-  type AnthropicStreamEventData,
-  type AnthropicStreamState,
+import type {
+  AnthropicStreamEventData,
+  AnthropicStreamState,
 } from "../anthropic/types"
 import { mapOpenAIStopReasonToAnthropic } from "./stop-reason"
 
@@ -113,7 +113,7 @@ export function translateChunkToAnthropicEvents(
     const toolCalls = delta.tool_calls
     for (let tci = 0; tci < toolCalls.length; tci++) {
       const toolCall = toolCalls[tci]!
-      if (toolCall && toolCall.id && toolCall.function?.name) {
+      if (toolCall?.id && toolCall.function?.name) {
         // New tool call starting.
         if (state.contentBlockOpen) {
           // Close any previously open block.
@@ -145,7 +145,7 @@ export function translateChunkToAnthropicEvents(
         state.contentBlockOpen = true
       }
 
-      if (toolCall && toolCall.function?.arguments) {
+      if (toolCall?.function?.arguments) {
         const toolCallInfo = state.toolCalls[toolCall.index]
         // Tool call can still be empty
         if (toolCallInfo) {

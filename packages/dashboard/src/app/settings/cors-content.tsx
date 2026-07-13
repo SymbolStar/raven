@@ -153,7 +153,7 @@ export function CorsContent({ data }: CorsContentProps) {
             <div className="space-y-1.5">
               {origins.map((origin, index) => (
                 <div
-                  key={index}
+                  key={origin}
                   className="flex items-center gap-2 rounded bg-background px-3 py-1.5"
                 >
                   <code className="flex-1 text-xs font-mono">{origin}</code>

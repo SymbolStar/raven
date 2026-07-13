@@ -37,7 +37,7 @@ export async function proxyFetch<T>(
   };
 
   if (API_KEY) {
-    headers["Authorization"] = `Bearer ${API_KEY}`;
+    headers.Authorization = `Bearer ${API_KEY}`;
   }
 
   const res = await fetch(url, {

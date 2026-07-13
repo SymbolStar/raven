@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 function proxyHeaders(): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (API_KEY) headers["Authorization"] = `Bearer ${API_KEY}`;
+  if (API_KEY) headers.Authorization = `Bearer ${API_KEY}`;
   return headers;
 }
 

@@ -18,9 +18,9 @@ import type { CopilotTranslatedUpReq } from "../../strategies/copilot-translated
 import type { ServerSentEvent } from "./../../util/sse"
 import { forwardError, HTTPError } from "./../../lib/error"
 
-import {
-  type AnthropicMessagesPayload,
-  type AnthropicResponse,
+import type {
+  AnthropicMessagesPayload,
+  AnthropicResponse,
 } from "./../../protocols/anthropic/types"
 import {
   translateToAnthropic,

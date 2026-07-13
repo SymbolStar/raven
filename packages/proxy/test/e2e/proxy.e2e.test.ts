@@ -28,7 +28,7 @@ function headers(extra?: Record<string, string>): Record<string, string> {
     ...extra,
   };
   if (API_KEY) {
-    h["Authorization"] = `Bearer ${API_KEY}`;
+    h.Authorization = `Bearer ${API_KEY}`;
   }
   return h;
 }

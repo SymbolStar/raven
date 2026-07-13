@@ -22,7 +22,7 @@ export function parseIPv4(ip: string): number | null {
   let result = 0;
   for (const part of parts) {
     const num = parseInt(part, 10);
-    if (isNaN(num) || num < 0 || num > 255 || part !== String(num)) {
+    if (Number.isNaN(num) || num < 0 || num > 255 || part !== String(num)) {
       return null;
     }
     result = (result << 8) | num;
@@ -91,7 +91,7 @@ export function parseIPRange(input: string): IPRange | null {
     // Strict prefix validation: must be digits only, no extra chars
     if (!/^\d+$/.test(prefixPart)) return null;
     const prefix = parseInt(prefixPart, 10);
-    if (isNaN(prefix) || prefix < 0 || prefix > 32) return null;
+    if (Number.isNaN(prefix) || prefix < 0 || prefix > 32) return null;
 
     // Calculate mask and range
     const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;

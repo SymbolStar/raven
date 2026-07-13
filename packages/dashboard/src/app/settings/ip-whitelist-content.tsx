@@ -203,7 +203,7 @@ export function IPWhitelistContent({ data }: IPWhitelistContentProps) {
             <div className="space-y-1.5">
               {ranges.map((range, index) => (
                 <div
-                  key={index}
+                  key={range}
                   className="flex items-center gap-2 rounded bg-background px-3 py-1.5"
                 >
                   <code className="flex-1 text-xs font-mono">{range}</code>

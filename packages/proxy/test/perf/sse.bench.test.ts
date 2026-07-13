@@ -82,8 +82,8 @@ describe("SSE parser performance benchmarks", () => {
           controller.close();
         },
       });
-      let count = 0;
-      for await (const _ of parseSSEStream(stream)) count++;
+      let _count = 0;
+      for await (const _ of parseSSEStream(stream)) _count++;
     }
 
     // Benchmark: run 3 times and take best

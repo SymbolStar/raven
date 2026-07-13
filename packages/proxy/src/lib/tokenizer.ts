@@ -286,7 +286,7 @@ const calculateToolTokens = (
   if (fDesc.endsWith(".")) {
     fDesc = fDesc.slice(0, -1)
   }
-  const line = fName + ":" + fDesc
+  const line = `${fName}:${fDesc}`
   tokens += encoder.encode(line).length
   if (
     typeof func.parameters === "object"

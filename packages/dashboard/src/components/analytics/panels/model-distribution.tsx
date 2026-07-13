@@ -81,8 +81,8 @@ export function ModelDistribution({ data }: ModelDistributionProps) {
             />
             <Tooltip content={<ModelTooltip />} />
             <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={20} {...ANIMATION_PROPS}>
-              {data.map((_, i) => (
-                <Cell key={i} fill={getChartColor(i)} />
+              {data.map((entry, i) => (
+                <Cell key={`cell-${entry.model}`} fill={getChartColor(i)} />
               ))}
             </Bar>
           </BarChart>

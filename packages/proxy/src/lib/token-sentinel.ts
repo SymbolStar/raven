@@ -279,7 +279,7 @@ function noteSuccess(refreshInSeconds: number): void {
 function noteFailure(): number {
   consecutiveFailures += 1
   const backoff = Math.min(
-    REFRESH_INITIAL_BACKOFF_MS * Math.pow(2, consecutiveFailures - 1),
+    REFRESH_INITIAL_BACKOFF_MS * 2 ** (consecutiveFailures - 1),
     REFRESH_MAX_BACKOFF_MS,
   )
   failureCooldownUntil = Date.now() + backoff

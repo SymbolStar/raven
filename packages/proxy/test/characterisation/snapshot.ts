@@ -68,7 +68,7 @@ export async function captureOrDiff(snapshot: CharacterisationSnapshot): Promise
   const captureMode = process.env.RAVEN_CAPTURE_CHARACTERISATION === "1"
 
   if (captureMode) {
-    await Bun.write(path, JSON.stringify(snapshot, null, 2) + "\n")
+    await Bun.write(path, `${JSON.stringify(snapshot, null, 2)}\n`)
     return
   }
 

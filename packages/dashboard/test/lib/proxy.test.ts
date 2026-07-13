@@ -96,7 +96,7 @@ describe("proxyFetch", () => {
 
     const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
-    expect(headers["Authorization"]).toBe("Bearer test-key-123");
+    expect(headers.Authorization).toBe("Bearer test-key-123");
   });
 
   it("prefers RAVEN_INTERNAL_KEY over RAVEN_API_KEY", async () => {
@@ -110,7 +110,7 @@ describe("proxyFetch", () => {
 
     const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
-    expect(headers["Authorization"]).toBe("Bearer internal-key");
+    expect(headers.Authorization).toBe("Bearer internal-key");
   });
 
   it("omits Authorization header when API_KEY is empty", async () => {
@@ -124,7 +124,7 @@ describe("proxyFetch", () => {
 
     const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
-    expect(headers["Authorization"]).toBeUndefined();
+    expect(headers.Authorization).toBeUndefined();
   });
 
   it("merges caller-provided headers", async () => {

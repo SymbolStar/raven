@@ -73,10 +73,10 @@ async function migrateFile(
 
     // For SQLite databases, also copy WAL (-wal) and SHM (-shm) files
     if (source.endsWith(".db")) {
-      const walSource = source + "-wal";
-      const shmSource = source + "-shm";
-      const walDest = dest + "-wal";
-      const shmDest = dest + "-shm";
+      const walSource = `${source}-wal`;
+      const shmSource = `${source}-shm`;
+      const walDest = `${dest}-wal`;
+      const shmDest = `${dest}-shm`;
 
       if (await exists(walSource)) {
         await fs.copyFile(walSource, walDest);

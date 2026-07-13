@@ -1,4 +1,4 @@
-import { type AnthropicResponse } from "../anthropic/types"
+import type { AnthropicResponse } from "../anthropic/types"
 
 const STOP_REASON_MAP = {
   stop: "end_turn",

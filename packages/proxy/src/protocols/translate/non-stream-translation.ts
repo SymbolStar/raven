@@ -1,27 +1,27 @@
-import {
-  type ChatCompletionResponse,
-  type ChatCompletionsPayload,
-  type ContentPart,
-  type Message,
-  type Tool,
-  type ToolCall,
+import type {
+  ChatCompletionResponse,
+  ChatCompletionsPayload,
+  ContentPart,
+  Message,
+  Tool,
+  ToolCall,
 } from "./../../upstream/copilot-openai"
 
 import { translateModelName } from "../anthropic/preprocess"
 
-import {
-  type AnthropicAssistantContentBlock,
-  type AnthropicAssistantMessage,
-  type AnthropicMessage,
-  type AnthropicMessagesPayload,
-  type AnthropicResponse,
-  type AnthropicTextBlock,
-  type AnthropicThinkingBlock,
-  type AnthropicTool,
-  type AnthropicToolResultBlock,
-  type AnthropicToolUseBlock,
-  type AnthropicUserContentBlock,
-  type AnthropicUserMessage,
+import type {
+  AnthropicAssistantContentBlock,
+  AnthropicAssistantMessage,
+  AnthropicMessage,
+  AnthropicMessagesPayload,
+  AnthropicResponse,
+  AnthropicTextBlock,
+  AnthropicThinkingBlock,
+  AnthropicTool,
+  AnthropicToolResultBlock,
+  AnthropicToolUseBlock,
+  AnthropicUserContentBlock,
+  AnthropicUserMessage,
 } from "../anthropic/types"
 
 // ---------------------------------------------------------------------------
@@ -212,7 +212,7 @@ export function translateToOpenAI(
   const tools = translateAnthropicToolsToOpenAI(payload.tools) || undefined
   const toolChoice = translateAnthropicToolChoiceToOpenAI(payload.tool_choice) || undefined
 
-  let reasoning_effort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined = undefined
+  let reasoning_effort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined 
   if (options?.targetFormat === "openai-reasoning" && payload.thinking?.type === "enabled") {
     const budget = payload.thinking.budget_tokens ?? 0
     reasoning_effort = budget >= 10000 ? "high" : budget >= 5000 ? "medium" : budget >= 2000 ? "low" : "minimal"

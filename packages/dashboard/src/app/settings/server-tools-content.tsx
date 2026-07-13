@@ -25,7 +25,7 @@ const SERVER_TOOL_ITEMS = [
 
 export function ServerToolsContent({ data }: ServerToolsContentProps) {
   const router = useRouter()
-  const webSearch = data["web_search"]
+  const webSearch = data.web_search
 
   const [enabled, setEnabled] = useState(webSearch?.enabled ?? false)
   const [apiKey, setApiKey] = useState("")

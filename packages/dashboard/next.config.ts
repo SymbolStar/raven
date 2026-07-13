@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
-import { dirname, resolve } from "path";
-import { fileURLToPath } from "url";
-import { createRequire } from "module";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 
 const __dir =
   typeof __dirname !== "undefined"

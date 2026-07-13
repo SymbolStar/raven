@@ -181,7 +181,7 @@ function generateId(): string {
 function maskApiKey(key: string): string {
   if (key.length === 0) return "****"
   const prefix = key.slice(0, 8)
-  return prefix + "...****"
+  return `${prefix}...****`
 }
 
 function toPublic(row: ProviderRecord): ProviderPublic {

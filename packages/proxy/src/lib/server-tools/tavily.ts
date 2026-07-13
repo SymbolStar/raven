@@ -222,7 +222,7 @@ export function formatWebSearchResult(
   // Build plain text for synthesis
   let text = ""
   if (tavilyResponse.answer) {
-    text += tavilyResponse.answer + "\n\n"
+    text += `${tavilyResponse.answer}\n\n`
   }
   text += results
     .map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.content}`)

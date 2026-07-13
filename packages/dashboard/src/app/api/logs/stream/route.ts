@@ -11,7 +11,7 @@
 //   ?requestId=<id>               (optional: filter to single request)
 // ---------------------------------------------------------------------------
 
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 
 export const dynamic = "force-dynamic";
 

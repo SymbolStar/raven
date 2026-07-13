@@ -190,11 +190,11 @@ describe("auth.ts cookie configuration", () => {
     it("NODE_ENV=production → secure cookies with __Secure- / __Host- prefixes", async () => {
       await importAuth({ ...AUTH_ENV, NODE_ENV: "production" });
 
-      expect(lastConfig.cookies["sessionToken"]!.name).toBe("__Secure-authjs.session-token");
-      expect(lastConfig.cookies["csrfToken"]!.name).toBe("__Host-authjs.csrf-token");
-      expect(lastConfig.cookies["state"]!.name).toBe("__Secure-authjs.state");
-      expect(lastConfig.cookies["pkceCodeVerifier"]!.name).toBe("__Secure-authjs.pkce.code_verifier");
-      expect(lastConfig.cookies["callbackUrl"]!.name).toBe("__Secure-authjs.callback-url");
+      expect(lastConfig.cookies.sessionToken!.name).toBe("__Secure-authjs.session-token");
+      expect(lastConfig.cookies.csrfToken!.name).toBe("__Host-authjs.csrf-token");
+      expect(lastConfig.cookies.state!.name).toBe("__Secure-authjs.state");
+      expect(lastConfig.cookies.pkceCodeVerifier!.name).toBe("__Secure-authjs.pkce.code_verifier");
+      expect(lastConfig.cookies.callbackUrl!.name).toBe("__Secure-authjs.callback-url");
     });
 
     it("NEXTAUTH_URL=https://... → secure cookies", async () => {
@@ -204,8 +204,8 @@ describe("auth.ts cookie configuration", () => {
         NEXTAUTH_URL: "https://dashboard.example.com",
       });
 
-      expect(lastConfig.cookies["sessionToken"]!.name).toBe("__Secure-authjs.session-token");
-      expect(lastConfig.cookies["sessionToken"]!.options.secure).toBe(true);
+      expect(lastConfig.cookies.sessionToken!.name).toBe("__Secure-authjs.session-token");
+      expect(lastConfig.cookies.sessionToken!.options.secure).toBe(true);
     });
 
     it("USE_SECURE_COOKIES=true → secure cookies", async () => {
@@ -215,8 +215,8 @@ describe("auth.ts cookie configuration", () => {
         USE_SECURE_COOKIES: "true",
       });
 
-      expect(lastConfig.cookies["sessionToken"]!.name).toBe("__Secure-authjs.session-token");
-      expect(lastConfig.cookies["sessionToken"]!.options.secure).toBe(true);
+      expect(lastConfig.cookies.sessionToken!.name).toBe("__Secure-authjs.session-token");
+      expect(lastConfig.cookies.sessionToken!.options.secure).toBe(true);
     });
 
     it("all cookie options have httpOnly: true, sameSite: lax", async () => {
@@ -238,8 +238,8 @@ describe("auth.ts cookie configuration", () => {
         USE_SECURE_COOKIES: "",
       });
 
-      expect(lastConfig.cookies["sessionToken"]!.name).toBe("authjs.session-token");
-      expect(lastConfig.cookies["csrfToken"]!.name).toBe("authjs.csrf-token");
+      expect(lastConfig.cookies.sessionToken!.name).toBe("authjs.session-token");
+      expect(lastConfig.cookies.csrfToken!.name).toBe("authjs.csrf-token");
     });
 
     it("cookie secure option is false", async () => {
@@ -250,7 +250,7 @@ describe("auth.ts cookie configuration", () => {
         USE_SECURE_COOKIES: "",
       });
 
-      expect(lastConfig.cookies["sessionToken"]!.options.secure).toBe(false);
+      expect(lastConfig.cookies.sessionToken!.options.secure).toBe(false);
     });
   });
 });

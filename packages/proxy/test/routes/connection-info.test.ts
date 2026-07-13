@@ -481,7 +481,7 @@ describe("GET /api/connection-info (providers)", () => {
 
     expect(fetchSpy).toHaveBeenCalledTimes(1)
     const [, options] = fetchSpy.mock.calls[0] as [string, RequestInit]
-    expect((options.headers as Record<string, string>)["Authorization"]).toBeUndefined()
+    expect((options.headers as Record<string, string>).Authorization).toBeUndefined()
   })
 
   test("provider base_url with trailing slashes → normalized correctly", async () => {

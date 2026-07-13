@@ -13,7 +13,7 @@ export async function POST(request: Request) {
       "Content-Type": "application/json",
     };
     if (API_KEY) {
-      headers["Authorization"] = `Bearer ${API_KEY}`;
+      headers.Authorization = `Bearer ${API_KEY}`;
     }
 
     const res = await fetch(`${PROXY_URL}/api/settings/socks5/test`, {

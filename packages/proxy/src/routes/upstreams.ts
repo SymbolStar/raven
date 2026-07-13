@@ -162,12 +162,12 @@ async function probeModelsEndpoint(
   let modelsOk = false
 
   const a = await tryAuth("x-api-key")
-  if (a && a.ok) {
+  if (a?.ok) {
     detected = "x-api-key"
     modelsOk = true
   } else {
     const b = await tryAuth("bearer")
-    if (b && b.ok) {
+    if (b?.ok) {
       detected = "bearer"
       modelsOk = true
     } else {
@@ -439,7 +439,7 @@ export function createUpstreamsRoute(db: Database): Hono {
     let detected: ProviderAuthStyle | null = null
     for (const style of order) {
       const r = await tryAuth(style)
-      if (r && r.ok) {
+      if (r?.ok) {
         res = r
         detected = style
         break
@@ -466,7 +466,7 @@ export function createUpstreamsRoute(db: Database): Hono {
       )
     }
 
-    if (!res || !res.ok) {
+    if (!res?.ok) {
       const text = res ? await res.text().catch(() => "") : ""
       const status = res?.status ?? 0
       updateProviderModelsSupport(db, id, false)

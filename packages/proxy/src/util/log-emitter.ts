@@ -12,7 +12,7 @@
 //   - Level check happens BEFORE serialization to avoid wasted work
 // ---------------------------------------------------------------------------
 
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
 import type { LogEvent } from "./log-event.ts";
 
 const DEFAULT_BUFFER_SIZE = 200;

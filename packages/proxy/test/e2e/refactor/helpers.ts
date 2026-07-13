@@ -16,7 +16,7 @@ export function headers(extra?: Record<string, string>): Record<string, string> 
     "Content-Type": "application/json",
     ...extra,
   };
-  if (API_KEY) h["Authorization"] = `Bearer ${API_KEY}`;
+  if (API_KEY) h.Authorization = `Bearer ${API_KEY}`;
   return h;
 }
 
@@ -119,7 +119,7 @@ export async function goldenSSE(
   }
 
   if (process.env.RAVEN_CAPTURE_GOLDENS === "1") {
-    await Bun.write(fullPath, JSON.stringify(live, null, 2) + "\n");
+    await Bun.write(fullPath, `${JSON.stringify(live, null, 2)}\n`);
     stored = live;
   }
 

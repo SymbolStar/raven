@@ -88,7 +88,7 @@ function generateStoryWithMarkers(
 
     // Add a paragraph
     const paragraph = paragraphs[paragraphIndex % paragraphs.length]!
-    parts.push(paragraph + "\n\n")
+    parts.push(`${paragraph}\n\n`)
     currentWords += paragraph.split(/\s+/).length
     paragraphIndex++
   }
@@ -103,7 +103,7 @@ function headers(extra?: Record<string, string>): Record<string, string> {
     ...extra,
   }
   if (API_KEY) {
-    h["Authorization"] = `Bearer ${API_KEY}`
+    h.Authorization = `Bearer ${API_KEY}`
   }
   return h
 }
