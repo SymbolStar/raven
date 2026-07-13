@@ -1,0 +1,78 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.3/schema.json",
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"files": {
+		"ignoreUnknown": true,
+		"includes": [
+			"**",
+			"!**/node_modules",
+			"!**/dist",
+			"!**/.next",
+			"!**/coverage",
+			"!**/data",
+			"!**/*.min.js",
+			"!**/__golden__/**",
+			"!**/e2e/refactor/__golden__/**"
+		]
+	},
+	"formatter": {
+		"enabled": false
+	},
+	"assist": {
+		"enabled": false
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"recommended": true,
+			"style": {
+				"useImportType": "error",
+				"useNodejsImportProtocol": "error",
+				"noNonNullAssertion": "off"
+			},
+			"correctness": {
+				"noUnusedVariables": {
+					"level": "error",
+					"options": {
+						"ignoreRestSiblings": true
+					}
+				},
+				"noUnusedImports": "error",
+				"noUnusedFunctionParameters": {
+					"level": "error",
+					"options": {
+						"ignoreRestSiblings": true
+					}
+				}
+			}
+		}
+	},
+	"javascript": {
+		"globals": ["Bun"]
+	},
+	"css": {
+		"parser": {
+			"cssModules": true,
+			"tailwindDirectives": true
+		}
+	},
+	"overrides": [
+		{
+			"includes": ["**/*.test.ts", "**/*.test.tsx", "**/test/**"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noExplicitAny": "off"
+					},
+					"style": {
+						"useImportType": "off"
+					}
+				}
+			}
+		}
+	]
+}
