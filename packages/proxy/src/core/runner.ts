@@ -74,7 +74,7 @@ function runStream<Req, UpReq, UpResp, Resp, Ch, Ev extends SSEMessage, St>(
         if (firstChunkTime === null) firstChunkTime = performance.now()
         const events = strategy.adaptChunk(upstreamChunk, state, ctx)
         for (const ev of events) {
-          await sseStream.writeSSE(ev)
+          await sseStream.writeSSE(sanitizeSSEMessage(ev))
         }
       }
     } catch (err) {
@@ -82,7 +82,7 @@ function runStream<Req, UpReq, UpResp, Resp, Ch, Ev extends SSEMessage, St>(
       const terminal = strategy.adaptStreamError(err, state, ctx)
       for (const ev of terminal) {
         try {
-          await sseStream.writeSSE(ev)
+          await sseStream.writeSSE(sanitizeSSEMessage(ev))
         } catch {
           // Best-effort — connection may already be closed.
         }
@@ -91,6 +91,19 @@ function runStream<Req, UpReq, UpResp, Resp, Ch, Ev extends SSEMessage, St>(
       emitStreamEnd(ctx, strategy, upstreamReq, state, firstChunkTime, streamError)
     }
   })
+}
+
+// Since hono 4.12.31, writeSSE emits `retry: null` literally when retry is
+// null (previously null was filtered by a truthy check). Our internal SSE
+// event type carries `retry: number | null` / `event: string | null` /
+// `id: string | null`; drop the null fields so on-wire output matches the
+// SSE spec (only present fields).
+function sanitizeSSEMessage<Ev extends SSEMessage>(ev: Ev): SSEMessage {
+  const out: SSEMessage = { data: ev.data }
+  if (ev.event != null) out.event = ev.event
+  if (ev.id != null) out.id = ev.id
+  if (ev.retry != null) out.retry = ev.retry
+  return out
 }
 
 function emitSuccessEnd<Req, UpReq, UpResp, Resp, Ch, Ev extends SSEMessage, St>(
