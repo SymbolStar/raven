@@ -17,6 +17,7 @@ import { CopilotResponsesClient } from "../../src/upstream/copilot-responses"
 import { CopilotEmbeddingsClient } from "../../src/upstream/copilot-embeddings"
 import { CustomOpenAIClient } from "../../src/upstream/custom-openai"
 import { CustomAnthropicClient } from "../../src/upstream/custom-anthropic"
+import { CustomResponsesClient } from "../../src/upstream/custom-responses"
 
 const cases: ReadonlyArray<{ kind: UpstreamKind; ctor: unknown }> = [
   { kind: "copilot-openai", ctor: CopilotOpenAIClient },
@@ -25,6 +26,7 @@ const cases: ReadonlyArray<{ kind: UpstreamKind; ctor: unknown }> = [
   { kind: "copilot-embeddings", ctor: CopilotEmbeddingsClient },
   { kind: "custom-openai", ctor: CustomOpenAIClient },
   { kind: "custom-anthropic", ctor: CustomAnthropicClient },
+  { kind: "custom-responses", ctor: CustomResponsesClient },
 ]
 
 describe("buildUpstreamClient (E.9)", () => {

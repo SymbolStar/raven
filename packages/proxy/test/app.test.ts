@@ -186,6 +186,7 @@ describe("createApp", () => {
     expect(body.endpoints).toBeDefined()
     expect(body.endpoints.chat_completions).toBe("/v1/chat/completions")
     expect(body.endpoints.messages).toBe("/v1/messages")
+    expect(body.endpoints.responses).toBe("/v1/responses")
   })
 
   // -----------------------------------------------------------------------

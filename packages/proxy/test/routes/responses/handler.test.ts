@@ -263,8 +263,7 @@ describe("handleResponses (errors)", () => {
     expect(json.error.message).toContain("rate limit exceeded")
   })
 
-  test("returns 400 when model maps to a custom provider (router reject)", async () => {
-    // §3.2: Responses API cannot be routed to custom upstreams.
+  test("forwards a custom OpenAI provider Responses request unchanged", async () => {
     const savedProviders = state.providers
     state.providers = [
       {
@@ -284,14 +283,20 @@ describe("handleResponses (errors)", () => {
       },
     ]
     try {
+      const upstream = makeResponsesResponse({ model: "gpt-5.2" })
+      fetchSpy.mockResolvedValueOnce(mockFetchJson(upstream))
       const app = makeApp()
       const res = await app.request(req({ model: "gpt-5.2", input: "hello" }))
 
-      expect(res.status).toBe(400)
-      const json = await res.json()
-      expect(json.error.type).toBe("invalid_request_error")
-      expect(json.error.message).toContain("custom upstreams")
-      expect(fetchSpy).not.toHaveBeenCalled()
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual(upstream)
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "https://example.invalid/responses",
+        expect.objectContaining({
+          headers: expect.objectContaining({ Authorization: "Bearer sk-test" }),
+          body: JSON.stringify({ model: "gpt-5.2", input: "hello" }),
+        }),
+      )
     } finally {
       state.providers = savedProviders
     }

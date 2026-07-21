@@ -335,6 +335,7 @@ function CreateProviderDialog() {
     model_patterns: [],
     is_enabled: true,
     supports_reasoning: false,
+    strict_passthrough: false,
   });
 
   const handleSubmit = async () => {
@@ -372,6 +373,7 @@ function CreateProviderDialog() {
         model_patterns: [],
         is_enabled: true,
         supports_reasoning: false,
+        strict_passthrough: false,
       });
       router.refresh();
     } catch (err) {
@@ -429,6 +431,7 @@ function EditProviderDialog({ provider }: { provider: ProviderPublic }) {
     model_patterns: provider.model_patterns,
     is_enabled: provider.is_enabled,
     supports_reasoning: provider.supports_reasoning,
+    strict_passthrough: provider.strict_passthrough,
   });
 
   const handleSubmit = async () => {
@@ -670,6 +673,22 @@ function ProviderForm<T extends CreateProviderInput | UpdateProviderInput>({
           onCheckedChange={(checked) => onChange({ ...data, is_enabled: checked })}
         />
       </div>
+
+      {data.format === "anthropic" && (
+        <div className="flex items-center justify-between">
+          <div className="space-y-0.5">
+            <Label htmlFor="strict_passthrough">Strict Protocol Passthrough</Label>
+            <p className="text-xs text-muted-foreground">
+              Preserve native Anthropic fields such as thinking and context management.
+            </p>
+          </div>
+          <Switch
+            id="strict_passthrough"
+            checked={data.strict_passthrough ?? false}
+            onCheckedChange={(checked) => onChange({ ...data, strict_passthrough: checked })}
+          />
+        </div>
+      )}
 
       <div className="flex items-center justify-between">
         <div className="space-y-0.5">

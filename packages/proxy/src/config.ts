@@ -8,6 +8,7 @@ export interface Config {
   dbPath: string;
   logLevel: "debug" | "info" | "warn" | "error";
   baseUrl: string;
+  disableCopilot: boolean;
 }
 
 export function loadConfig(): Config {
@@ -18,6 +19,7 @@ export function loadConfig(): Config {
   const dbPath = getDefaultDbPath();
   const logLevel = (process.env.RAVEN_LOG_LEVEL ?? "info") as Config["logLevel"];
   const baseUrl = process.env.RAVEN_BASE_URL ?? "";
+  const disableCopilot = process.env.RAVEN_DISABLE_COPILOT === "true";
 
-  return { port, apiKey, internalKey, tokenPath, dbPath, logLevel, baseUrl };
+  return { port, apiKey, internalKey, tokenPath, dbPath, logLevel, baseUrl, disableCopilot };
 }

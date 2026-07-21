@@ -538,6 +538,26 @@ describe("upstreams API", () => {
       expect(json.error.type).toBe("service_unavailable")
     })
 
+    test("POST allows custom-provider-only mode without a Copilot catalog", async () => {
+      const app = makeApp(db)
+      state.models = null
+      const previous = process.env.RAVEN_DISABLE_COPILOT
+      process.env.RAVEN_DISABLE_COPILOT = "true"
+      try {
+        const res = await app.request(req("POST", "/api/upstreams", {
+          name: "CarHer Anthropic",
+          base_url: "https://cc.auto-link.com.cn/pro",
+          format: "anthropic",
+          api_key: "sk-test-key",
+          model_patterns: ["anthropic.claude-*"],
+        }))
+        expect(res.status).toBe(201)
+      } finally {
+        if (previous === undefined) delete process.env.RAVEN_DISABLE_COPILOT
+        else process.env.RAVEN_DISABLE_COPILOT = previous
+      }
+    })
+
     test("PUT returns 503 when updating model_patterns and state.models is null", async () => {
       const app = makeApp(db)
 

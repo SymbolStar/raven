@@ -24,6 +24,7 @@ export interface ProviderRecord {
   model_patterns: string // JSON array
   enabled: number // 0 | 1
   supports_reasoning: number // 0 | 1
+  strict_passthrough?: number // 0 | 1; missing in pre-migration records means false
   supports_models_endpoint: number // 0 | 1 | null (null = unknown)
   auth_style?: ProviderAuthStyle | null // unknown when missing/null; probe sets it
   use_socks5: number | null // null = default, 0 = force off, 1 = force on
@@ -93,6 +94,7 @@ export interface ProviderPublic {
   raw_model_patterns: string // Original JSON string for debugging/recovery
   is_enabled: boolean
   supports_reasoning: boolean
+  strict_passthrough?: boolean
   supports_models_endpoint: boolean | null // null = unknown
   auth_style: ProviderAuthStyle | null // null = unknown
   compilation_error: string | null // null = compiled successfully, string = error message
@@ -109,6 +111,7 @@ export interface CreateProviderInput {
   model_patterns: string[]
   is_enabled?: boolean
   supports_reasoning?: boolean
+  strict_passthrough?: boolean
   auth_style?: ProviderAuthStyle | null
 }
 
@@ -121,6 +124,7 @@ export interface UpdateProviderInput {
   model_patterns?: string[]
   is_enabled?: boolean
   supports_reasoning?: boolean
+  strict_passthrough?: boolean
   auth_style?: ProviderAuthStyle | null
 }
 
@@ -138,6 +142,7 @@ CREATE TABLE IF NOT EXISTS providers (
   model_patterns     TEXT NOT NULL DEFAULT '[]',
   enabled            INTEGER NOT NULL DEFAULT 1,
   supports_reasoning INTEGER NOT NULL DEFAULT 0,
+  strict_passthrough INTEGER NOT NULL DEFAULT 0,
   created_at         INTEGER NOT NULL,
   updated_at         INTEGER NOT NULL
 );
@@ -159,6 +164,7 @@ export function initProviders(db: Database): void {
     }
   }
   safeAddColumn("ALTER TABLE providers ADD COLUMN supports_reasoning INTEGER NOT NULL DEFAULT 0")
+  safeAddColumn("ALTER TABLE providers ADD COLUMN strict_passthrough INTEGER NOT NULL DEFAULT 0")
   safeAddColumn("ALTER TABLE providers ADD COLUMN supports_models_endpoint INTEGER DEFAULT NULL")
   safeAddColumn("ALTER TABLE providers ADD COLUMN use_socks5 INTEGER DEFAULT NULL")
   safeAddColumn("ALTER TABLE providers ADD COLUMN auth_style TEXT DEFAULT NULL")
@@ -214,6 +220,7 @@ function toPublic(row: ProviderRecord): ProviderPublic {
     raw_model_patterns: row.model_patterns, // Preserve original for debugging/recovery
     is_enabled: row.enabled === 1,
     supports_reasoning: row.supports_reasoning === 1,
+    strict_passthrough: row.strict_passthrough === 1,
     supports_models_endpoint: row.supports_models_endpoint === null ? null : row.supports_models_endpoint === 1,
     auth_style: row.auth_style ?? null,
     compilation_error: compilationError,
@@ -227,8 +234,8 @@ function toPublic(row: ProviderRecord): ProviderPublic {
 // ---------------------------------------------------------------------------
 
 const INSERT_SQL = `
-INSERT INTO providers (id, name, base_url, format, api_key, model_patterns, enabled, supports_reasoning, auth_style, created_at, updated_at)
-VALUES ($id, $name, $base_url, $format, $api_key, $model_patterns, $enabled, $supports_reasoning, $auth_style, $created_at, $updated_at)
+INSERT INTO providers (id, name, base_url, format, api_key, model_patterns, enabled, supports_reasoning, strict_passthrough, auth_style, created_at, updated_at)
+VALUES ($id, $name, $base_url, $format, $api_key, $model_patterns, $enabled, $supports_reasoning, $strict_passthrough, $auth_style, $created_at, $updated_at)
 `
 
 export function createProvider(
@@ -247,6 +254,7 @@ export function createProvider(
     $model_patterns: JSON.stringify(input.model_patterns),
     $enabled: input.is_enabled === false ? 0 : 1,
     $supports_reasoning: input.supports_reasoning === true ? 1 : 0,
+    $strict_passthrough: input.strict_passthrough === true ? 1 : 0,
     $auth_style: input.auth_style ?? null,
     $created_at: now,
     $updated_at: now,
@@ -307,6 +315,12 @@ export function updateProvider(
           ? 1
           : 0
         : existing.supports_reasoning,
+    strict_passthrough:
+      input.strict_passthrough !== undefined
+        ? input.strict_passthrough
+          ? 1
+          : 0
+        : (existing.strict_passthrough ?? 0),
     auth_style:
       input.auth_style !== undefined ? input.auth_style : (existing.auth_style ?? null),
   }
@@ -316,6 +330,7 @@ export function updateProvider(
      SET name = $name, base_url = $base_url, format = $format,
          api_key = $api_key, model_patterns = $model_patterns,
          enabled = $enabled, supports_reasoning = $supports_reasoning,
+         strict_passthrough = $strict_passthrough,
          auth_style = $auth_style,
          updated_at = $updated_at
      WHERE id = $id`,
@@ -328,6 +343,7 @@ export function updateProvider(
     $model_patterns: updated.model_patterns,
     $enabled: updated.enabled,
     $supports_reasoning: updated.supports_reasoning,
+    $strict_passthrough: updated.strict_passthrough,
     $auth_style: updated.auth_style,
     $updated_at: now,
   })

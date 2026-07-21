@@ -43,6 +43,16 @@ function sanitizeAnthropicPayload(payload: AnthropicMessagesPayload): Record<str
   return requestBody
 }
 
+function prepareAnthropicPayload(
+  provider: CompiledProvider,
+  payload: AnthropicMessagesPayload,
+): Record<string, unknown> {
+  // Strict providers, such as CarHer, expose the native Anthropic protocol.
+  // Preserve advanced thinking and context fields instead of Copilot cleanup.
+  if (provider.strict_passthrough === 1) return payload as unknown as Record<string, unknown>
+  return sanitizeAnthropicPayload(payload)
+}
+
 export interface CustomAnthropicRequest {
   provider: CompiledProvider
   payload: AnthropicMessagesPayload
@@ -63,7 +73,7 @@ export class CustomAnthropicClient
     const { provider, payload } = req
     const url = `${provider.base_url.replace(/\/+$/, "")}/v1/messages`
     const proxyUrl = this.config.getProxyUrl(provider)
-    const requestBody = sanitizeAnthropicPayload(payload)
+    const requestBody = prepareAnthropicPayload(provider, payload)
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "anthropic-version": "2023-06-01",

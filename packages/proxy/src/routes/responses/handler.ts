@@ -5,6 +5,8 @@ import { respondRouterReject } from "../../core/router-reject"
 import type { RequestContext as RunnerCtx } from "../../core/context"
 import { dispatch as compositionDispatch } from "../../composition"
 import type { ResponsesPayload } from "../../upstream/copilot-responses"
+import { resolveProvider } from "../../lib/upstream-router"
+import type { CustomResponsesUpReq } from "../../strategies/custom-responses"
 import { forwardError } from "../../lib/error"
 import { checkRateLimit } from "../../lib/rate-limit"
 import { state } from "../../lib/state"
@@ -60,7 +62,16 @@ export const handleResponses = async (c: Context) => {
     })
   }
 
-  // decision.name === "copilot-responses" — route through composition.dispatch.
+  // Custom providers receive the original Responses payload. Copilot keeps
+  // its existing strategy because it needs Copilot-specific tool adaptation.
+  const resolved = decision.name === "custom-responses" ? resolveProvider(model) : null
+  if (decision.name === "custom-responses" && !resolved) {
+    throw new Error(`router/handler drift: no provider for ${model}`)
+  }
+  const dispatchPayload: ResponsesPayload | CustomResponsesUpReq = resolved
+    ? { provider: resolved.provider, payload }
+    : payload
+
   const runnerCtx: RunnerCtx = {
     requestId, startTime, format: "responses", path: "/v1/responses",
     stream,
@@ -68,7 +79,7 @@ export const handleResponses = async (c: Context) => {
     sessionId, clientName, clientVersion,
   }
   try {
-    return await compositionDispatch(c, runnerCtx, payload, "responses", {
+    return await compositionDispatch(c, runnerCtx, dispatchPayload, "responses", {
       model,
       stream,
       providers: state.providers,

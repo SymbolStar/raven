@@ -70,6 +70,11 @@ describe("composition/strategy-registry", () => {
     expect(typeof s.initStreamState).toBe("function")
   })
 
+  test("returns a Strategy with name=custom-responses for ok decision", () => {
+    const s = buildStrategy({ kind: "ok", name: "custom-responses" }, { toolCallDebug: false })
+    expect(s.name).toBe("custom-responses")
+  })
+
   test("throws on non-ok decision (route must reject before reaching here)", () => {
     const reject: StrategyDecision = {
       kind: "reject",

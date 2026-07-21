@@ -8,7 +8,7 @@
 // this file is responsible for translating `state.optToolCallDebug` etc into
 // constructor args.
 //
-// All six strategies registered:
+// All seven strategies registered:
 //   copilot-openai-direct, copilot-native, copilot-responses,
 //   custom-openai, custom-anthropic, copilot-translated.
 // ---------------------------------------------------------------------------
@@ -24,6 +24,7 @@ import { makeCopilotNative } from "../strategies/copilot-native"
 import { makeCopilotResponses } from "../strategies/copilot-responses"
 import { makeCustomOpenAI } from "../strategies/custom-openai"
 import { makeCustomAnthropic } from "../strategies/custom-anthropic"
+import { makeCustomResponses } from "../strategies/custom-responses"
 import { makeCopilotTranslated } from "../strategies/copilot-translated"
 
 export interface BuildStrategyDeps {
@@ -78,6 +79,10 @@ export function buildStrategy(
     case "custom-anthropic":
       return makeCustomAnthropic({
         client: buildUpstreamClient("custom-anthropic"),
+      }) as unknown as AnyStrategy
+    case "custom-responses":
+      return makeCustomResponses({
+        client: buildUpstreamClient("custom-responses"),
       }) as unknown as AnyStrategy
     case "copilot-translated":
       return makeCopilotTranslated({

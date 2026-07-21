@@ -92,6 +92,18 @@ describe("createProvider", () => {
     expect(result.is_enabled).toBe(false)
   })
 
+  test("persists strict_passthrough for native Anthropic providers", () => {
+    const result = createProvider(db, {
+      name: "CarHer Anthropic",
+      base_url: "https://cc.auto-link.com.cn/pro",
+      format: "anthropic",
+      api_key: "key",
+      model_patterns: ["anthropic.claude-*"],
+      strict_passthrough: true,
+    })
+    expect(result.strict_passthrough).toBe(true)
+  })
+
   test("generates unique ids", () => {
     const a = createProvider(db, {
       name: "A",

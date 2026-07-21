@@ -11,9 +11,9 @@ describe("core/strategy", () => {
       "copilot-translated",
       "custom-anthropic",
       "custom-openai",
+      "custom-responses",
     ])
-    // §1.1: exactly 6 strategies as of this doc.
-    expect(STRATEGY_NAMES.length).toBe(6)
+    expect(STRATEGY_NAMES.length).toBe(7)
   })
 
   test("isStrategyName accepts known + rejects unknown", () => {

@@ -36,6 +36,11 @@ import {
   defaultCustomAnthropicConfig,
   type CustomAnthropicConfig,
 } from "../upstream/custom-anthropic"
+import {
+  CustomResponsesClient,
+  defaultCustomResponsesConfig,
+  type CustomResponsesConfig,
+} from "../upstream/custom-responses"
 
 export type UpstreamKind =
   | "copilot-openai"
@@ -44,6 +49,7 @@ export type UpstreamKind =
   | "copilot-embeddings"
   | "custom-openai"
   | "custom-anthropic"
+  | "custom-responses"
 
 export interface UpstreamRegistryDeps {
   copilotOpenAI?: CopilotOpenAIConfig
@@ -52,6 +58,7 @@ export interface UpstreamRegistryDeps {
   copilotEmbeddings?: CopilotEmbeddingsConfig
   customOpenAI?: CustomOpenAIConfig
   customAnthropic?: CustomAnthropicConfig
+  customResponses?: CustomResponsesConfig
 }
 
 export type UpstreamClientByKind = {
@@ -61,6 +68,7 @@ export type UpstreamClientByKind = {
   "copilot-embeddings": CopilotEmbeddingsClient
   "custom-openai": CustomOpenAIClient
   "custom-anthropic": CustomAnthropicClient
+  "custom-responses": CustomResponsesClient
 }
 
 export function buildUpstreamClient<K extends UpstreamKind>(
@@ -91,6 +99,10 @@ export function buildUpstreamClient<K extends UpstreamKind>(
     case "custom-anthropic":
       return new CustomAnthropicClient(
         deps.customAnthropic ?? defaultCustomAnthropicConfig(),
+      ) as UpstreamClientByKind[K]
+    case "custom-responses":
+      return new CustomResponsesClient(
+        deps.customResponses ?? defaultCustomResponsesConfig(),
       ) as UpstreamClientByKind[K]
     default: {
       const exhaustive: never = kind
