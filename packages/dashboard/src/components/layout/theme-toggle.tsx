@@ -3,6 +3,7 @@
 import { Moon, Sun, Monitor } from "lucide-react";
 import { useCallback, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
+import { useLocale } from "@/components/locale-provider";
 
 type Theme = "light" | "dark" | "system";
 
@@ -56,6 +57,7 @@ function getServerSnapshot(): Theme {
 const ICON_PROPS = { className: "h-4 w-4", "aria-hidden": true as const, strokeWidth: 1.5 };
 
 export function ThemeToggle() {
+  const { t } = useLocale();
   const theme = useSyncExternalStore(
     subscribeToTheme,
     getSnapshot,
@@ -79,7 +81,7 @@ export function ThemeToggle() {
       ) : (
         <Sun {...ICON_PROPS} />
       )}
-      <span className="sr-only">Toggle theme</span>
+      <span className="sr-only">{t("toggleTheme")}</span>
     </Button>
   );
 }

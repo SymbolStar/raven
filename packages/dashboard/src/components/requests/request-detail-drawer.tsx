@@ -13,6 +13,7 @@ import {
 import { JsonBlock } from "@/components/ui/json-block";
 import type { ExtendedRequestRecord } from "@/lib/types";
 import { formatLatency } from "@/lib/chart-config";
+import { useLocale } from "@/components/locale-provider";
 
 interface RequestDetailDrawerProps {
   request: ExtendedRequestRecord | null;
@@ -20,8 +21,8 @@ interface RequestDetailDrawerProps {
   onOpenChange: (open: boolean) => void;
 }
 
-function formatTimestamp(ts: number): string {
-  return new Date(ts).toLocaleString("en-US", {
+function formatTimestamp(ts: number, locale: string): string {
+  return new Date(ts).toLocaleString(locale, {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -57,6 +58,7 @@ function DetailRow({ label, value, mono }: { label: string; value: React.ReactNo
 }
 
 export function RequestDetailDrawer({ request, open, onOpenChange }: RequestDetailDrawerProps) {
+  const { locale } = useLocale();
   if (!request) return null;
 
   const totalLatency = request.latency_ms;
@@ -79,7 +81,7 @@ export function RequestDetailDrawer({ request, open, onOpenChange }: RequestDeta
             <span className="font-mono text-sm truncate">{request.model}</span>
           </SheetTitle>
           <SheetDescription>
-            {formatTimestamp(request.timestamp)}
+            {formatTimestamp(request.timestamp, locale)}
           </SheetDescription>
         </SheetHeader>
 

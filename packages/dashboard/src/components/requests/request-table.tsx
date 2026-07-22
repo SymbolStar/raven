@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatLatency } from "@/lib/chart-config";
 import { cn } from "@/lib/utils";
+import { useLocale } from "@/components/locale-provider";
 import type { ExtendedRequestRecord } from "@/lib/types";
 
 interface RequestTableProps {
@@ -26,9 +27,9 @@ interface RequestTableProps {
   onRowClick?: (req: ExtendedRequestRecord) => void;
 }
 
-function formatTimestamp(ts: number): string {
+function formatTimestamp(ts: number, locale: string): string {
   const d = new Date(ts);
-  return d.toLocaleString("en-US", {
+  return d.toLocaleString(locale, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -65,6 +66,7 @@ export function RequestTable({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { locale } = useLocale();
 
   const currentSort = (searchParams.get("sort") ?? "timestamp") as SortColumn;
   const currentOrder = searchParams.get("order") ?? "desc";
@@ -236,7 +238,7 @@ export function RequestTable({
                   >
                     {isVisible("timestamp") && (
                       <TableCell className="px-3 py-2.5 text-xs text-muted-foreground tabular-nums whitespace-nowrap">
-                        {formatTimestamp(req.timestamp)}
+                        {formatTimestamp(req.timestamp, locale)}
                       </TableCell>
                     )}
                     {isVisible("model") && (

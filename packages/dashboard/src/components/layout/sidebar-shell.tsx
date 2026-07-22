@@ -13,11 +13,13 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useLocale } from "@/components/locale-provider";
 
 function SidebarShellInner({ children }: { children: React.ReactNode }) {
   const isMobile = useIsMobile();
   const { mobileOpen, setMobileOpen } = useSidebar();
   const pathname = usePathname();
+  const { t } = useLocale();
 
   // Close mobile sidebar on route change
   // biome-ignore lint/correctness/useExhaustiveDependencies: pathname is the trigger; setMobileOpen is stable
@@ -46,8 +48,8 @@ function SidebarShellInner({ children }: { children: React.ReactNode }) {
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
           <SheetContent side="left" className="w-[260px] p-0 sm:max-w-[260px]" showCloseButton={false}>
             <SheetHeader className="sr-only">
-              <SheetTitle>Navigation</SheetTitle>
-              <SheetDescription>Browse raven dashboard pages</SheetDescription>
+              <SheetTitle>{t("navigation")}</SheetTitle>
+              <SheetDescription>{t("browseDashboard")}</SheetDescription>
             </SheetHeader>
             <Sidebar mobile />
           </SheetContent>
@@ -76,11 +78,12 @@ export function SidebarShell({ children }: { children: React.ReactNode }) {
  */
 export function MobileMenuButton() {
   const { setMobileOpen } = useSidebar();
+  const { t } = useLocale();
 
   return (
     <button type="button"
       onClick={() => setMobileOpen(true)}
-      aria-label="Open navigation menu"
+      aria-label={t("openNavigation")}
       className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors md:hidden"
     >
       <Menu className="h-5 w-5" aria-hidden="true" strokeWidth={1.5} />
