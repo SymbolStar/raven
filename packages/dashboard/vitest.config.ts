@@ -29,6 +29,11 @@ export default defineConfig({
         "src/app/**/layout.tsx",
         "src/app/overview-charts.tsx",
         "src/app/analytics-charts.tsx",
+        "src/app/overview-header.tsx",
+        "src/app/overview-stats.tsx",
+        "src/app/requests/requests-header.tsx",
+        "src/app/sessions/sessions-header.tsx",
+        "src/app/sessions/sessions-stats.tsx",
         "src/app/models/model-explorer.tsx",
         // Sentinel viz subcomponents (recharts + SVG wrappers, no logic)
         "src/app/sentinel/**",
