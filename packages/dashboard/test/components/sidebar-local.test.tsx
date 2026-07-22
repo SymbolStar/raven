@@ -51,7 +51,7 @@ describe("sidebar module — auth config hook", () => {
     vi.resetModules();
 
     const { ALL_NAV_ITEMS, NAV_GROUPS } = await import("@/components/layout/sidebar");
-    expect(NAV_GROUPS.some((group) => group.label === "Copilot")).toBe(false);
+    expect(NAV_GROUPS).toHaveLength(3);
     expect(ALL_NAV_ITEMS.some((item) => item.href.startsWith("/copilot/"))).toBe(false);
   });
 

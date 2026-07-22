@@ -37,17 +37,19 @@ import { Badge } from "@/components/ui/badge";
 import { useSidebar } from "./sidebar-context";
 import { APP_VERSION } from "@/lib/version";
 import { useAuthConfig } from "@/hooks/use-auth-config";
+import { useLocale } from "@/components/locale-provider";
+import type { MessageKey } from "@/lib/locale";
 
 // ── Types ──
 
 interface NavItem {
   href: string;
-  label: string;
+  label: MessageKey;
   icon: React.ElementType;
 }
 
 interface NavGroup {
-  label: string;
+  label: MessageKey;
   items: NavItem[];
   defaultOpen?: boolean;
 }
@@ -56,33 +58,33 @@ interface NavGroup {
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    label: "Monitor",
+    label: "monitor",
     defaultOpen: true,
     items: [
-      { href: "/", label: "Overview", icon: LayoutDashboard },
-      { href: "/requests", label: "Requests", icon: List },
-      { href: "/models", label: "Models", icon: Boxes },
-      { href: "/clients", label: "Clients", icon: Users },
-      { href: "/sessions", label: "Sessions", icon: MessageSquare },
-      { href: "/providers", label: "Providers", icon: Route },
-      { href: "/logs", label: "Logs", icon: Terminal },
+      { href: "/", label: "overview", icon: LayoutDashboard },
+      { href: "/requests", label: "requests", icon: List },
+      { href: "/models", label: "models", icon: Boxes },
+      { href: "/clients", label: "clients", icon: Users },
+      { href: "/sessions", label: "sessions", icon: MessageSquare },
+      { href: "/providers", label: "providers", icon: Route },
+      { href: "/logs", label: "logs", icon: Terminal },
     ],
   },
   {
-    label: "Tools",
+    label: "tools",
     defaultOpen: true,
     items: [
-      { href: "/settings/server-tools", label: "Server Tools", icon: Wrench },
-      { href: "/settings/upstreams", label: "Upstreams", icon: Globe },
+      { href: "/settings/server-tools", label: "serverTools", icon: Wrench },
+      { href: "/settings/upstreams", label: "upstreams", icon: Globe },
     ],
   },
   {
-    label: "Settings",
+    label: "settings",
     defaultOpen: true,
     items: [
-      { href: "/settings", label: "General", icon: Settings },
-      { href: "/settings/proxy", label: "Proxy", icon: Shield },
-      { href: "/connect", label: "Connect", icon: Cable },
+      { href: "/settings", label: "general", icon: Settings },
+      { href: "/settings/proxy", label: "proxy", icon: Shield },
+      { href: "/connect", label: "connect", icon: Cable },
     ],
   },
 ];
@@ -101,13 +103,14 @@ function NavGroupSection({
   onNavigate: () => void;
 }) {
   const [open, setOpen] = useState(group.defaultOpen ?? true);
+  const { t } = useLocale();
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <div className="px-3 mt-2">
         <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2">
           <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
-            {group.label}
+            {t(group.label)}
           </span>
           <span className="flex h-5 w-5 shrink-0 items-center justify-center">
             <ChevronUp
@@ -148,7 +151,7 @@ function NavGroupSection({
                   )}
                 >
                   <item.icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-                  <span className="flex-1 text-left">{item.label}</span>
+                  <span className="flex-1 text-left">{t(item.label)}</span>
                 </Link>
               );
             })}
@@ -170,6 +173,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
   const { collapsed, toggle, setMobileOpen } = useSidebar();
   const { data: session, status: sessionStatus } = useSession();
   const { authEnabled, isLoading: authLoading, hasError } = useAuthConfig();
+  const { t } = useLocale();
 
   // Determine whether to show auth mode UI:
   // - While loading (auth config or session): assume auth mode to avoid "Local mode" flash
@@ -200,7 +204,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
   }
 
   const userName = showAsAuth ? (session?.user?.name ?? "User") : "Local";
-  const userEmail = showAsAuth ? (session?.user?.email ?? "") : "Local mode";
+  const userEmail = showAsAuth ? (session?.user?.email ?? "") : t("localMode");
   const userImage = showAsAuth ? session?.user?.image : undefined;
   const userInitial = userName[0] ?? "?";
 
@@ -235,14 +239,14 @@ export function Sidebar({ mobile = false }: SidebarProps) {
               <TooltipTrigger asChild>
                 <button type="button"
                   onClick={toggle}
-                  aria-label="Expand sidebar"
+                  aria-label={t("expandSidebar")}
                   className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors mb-2"
                 >
                   <PanelLeft className="h-4 w-4" aria-hidden="true" strokeWidth={1.5} />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right" sideOffset={8}>
-                Expand sidebar
+                {t("expandSidebar")}
               </TooltipContent>
             </Tooltip>
 
@@ -271,7 +275,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
                       </Link>
                     </TooltipTrigger>
                     <TooltipContent side="right" sideOffset={8}>
-                      {item.label}
+                      {t(item.label)}
                     </TooltipContent>
                   </Tooltip>
                 );
@@ -285,7 +289,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
                   <TooltipTrigger asChild>
                     <button type="button"
                       onClick={() => signOut({ callbackUrl: "/login" })}
-                      aria-label="Sign out"
+                      aria-label={t("signOut")}
                       className="cursor-pointer"
                     >
                       <Avatar className="h-9 w-9">
@@ -297,7 +301,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="right" sideOffset={8}>
-                    {userName} · Sign out
+                    {userName} · {t("signOut")}
                   </TooltipContent>
                 </Tooltip>
               ) : (
@@ -312,7 +316,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
                     </div>
                   </TooltipTrigger>
                   <TooltipContent side="right" sideOffset={8}>
-                    {userName} · Local mode
+                    {userName} · {t("localMode")}
                   </TooltipContent>
                 </Tooltip>
               )}
@@ -343,7 +347,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
                 </div>
                 <button type="button"
                   onClick={toggle}
-                  aria-label="Collapse sidebar"
+                  aria-label={t("collapseSidebar")}
                   className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <PanelLeft className="h-4 w-4" aria-hidden="true" strokeWidth={1.5} />
@@ -381,13 +385,13 @@ export function Sidebar({ mobile = false }: SidebarProps) {
                     <TooltipTrigger asChild>
                       <button type="button"
                         onClick={() => signOut({ callbackUrl: "/login" })}
-                        aria-label="Sign out"
+                        aria-label={t("signOut")}
                         className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors shrink-0"
                       >
                         <LogOut className="h-4 w-4" aria-hidden="true" strokeWidth={1.5} />
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent side="top">Sign out</TooltipContent>
+                    <TooltipContent side="top">{t("signOut")}</TooltipContent>
                   </Tooltip>
                 )}
               </div>

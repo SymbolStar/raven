@@ -1,7 +1,11 @@
+"use client";
+
 import { Github } from "@/components/icons/github";
 import { SidebarShell, MobileMenuButton } from "./sidebar-shell";
 import { ThemeToggle } from "./theme-toggle";
 import { Breadcrumbs } from "./breadcrumbs";
+import { LanguageToggle } from "./language-toggle";
+import { useLocale } from "@/components/locale-provider";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -9,6 +13,7 @@ interface AppShellProps {
 }
 
 export function AppShell({ children, breadcrumbs = [] }: AppShellProps) {
+  const { t } = useLocale();
   return (
     <SidebarShell>
       {/* Keep onboarding available for future use, but do not show it in the CarHer gateway dashboard. */}
@@ -16,7 +21,7 @@ export function AppShell({ children, breadcrumbs = [] }: AppShellProps) {
       <header className="flex h-14 shrink-0 items-center justify-between px-4 md:px-6">
         <div className="flex items-center gap-3">
           <MobileMenuButton />
-          <Breadcrumbs items={[{ label: "Home", href: "/" }, ...breadcrumbs]} />
+          <Breadcrumbs items={[{ label: t("home"), href: "/" }, ...breadcrumbs]} />
         </div>
         <div className="flex items-center gap-1">
           <a
@@ -28,6 +33,7 @@ export function AppShell({ children, breadcrumbs = [] }: AppShellProps) {
           >
             <Github className="h-[18px] w-[18px]" aria-hidden="true" strokeWidth={1.5} />
           </a>
+          <LanguageToggle />
           <ThemeToggle />
         </div>
       </header>
