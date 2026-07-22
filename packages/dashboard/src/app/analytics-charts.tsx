@@ -31,6 +31,7 @@ import {
   DashboardCartesianGrid,
 } from "@/components/dashboard/chart-primitives";
 import { DashboardSegment } from "@/components/layout/dashboard-segment";
+import { useLocale } from "@/components/locale-provider";
 import type { ExtendedTimeseriesBucket, BreakdownEntry } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -50,6 +51,7 @@ function TimeseriesTooltip({
   formatter?: (value: number, name: string) => string;
   showTotal?: boolean;
 }) {
+  const { t } = useLocale();
   if (!active || !payload?.length) return null;
   const fmt = formatter ?? ((v: number) => v.toLocaleString());
   const total = showTotal ? payload.reduce((s, e) => s + e.value, 0) : 0;
@@ -64,7 +66,7 @@ function TimeseriesTooltip({
         />
       ))}
       {showTotal && payload.length > 1 && (
-        <ChartTooltipSummary label="Total" value={fmt(total, "total")} />
+        <ChartTooltipSummary label={t("total")} value={fmt(total, "total")} />
       )}
     </ChartTooltip>
   );
@@ -133,8 +135,9 @@ function ChartPanel({
 // ---------------------------------------------------------------------------
 
 function TrafficVolumeChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
+  const { t } = useLocale();
   return (
-    <ChartPanel title="Request Volume">
+    <ChartPanel title={t("requestVolume")}>
       <AreaChart data={data}>
         <defs>
           <linearGradient id="successFill" x1="0" y1="0" x2="0" y2="1">
@@ -154,7 +157,7 @@ function TrafficVolumeChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
         <Area
           type="monotone"
           dataKey="success_count"
-          name="Success"
+          name={t("success")}
           stackId="volume"
           stroke={CHART_COLORS.primary}
           fill="url(#successFill)"
@@ -164,7 +167,7 @@ function TrafficVolumeChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
         <Area
           type="monotone"
           dataKey="error_count"
-          name="Errors"
+          name={t("error")}
           stackId="volume"
           stroke={CHART_COLORS.danger}
           fill="url(#errorFill)"
@@ -177,8 +180,9 @@ function TrafficVolumeChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
 }
 
 function StreamSyncChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
+  const { t } = useLocale();
   return (
-    <ChartPanel title="Stream vs Sync">
+    <ChartPanel title={t("streamVsSync")}>
       <AreaChart data={data}>
         <DashboardCartesianGrid />
         <XAxis dataKey="bucket" tickFormatter={formatBucketTime} {...AXIS_CONFIG} />
@@ -188,7 +192,7 @@ function StreamSyncChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
         <Area
           type="monotone"
           dataKey="stream_count"
-          name="Stream"
+          name={t("stream")}
           stackId="mode"
           stroke={getChartColor(2)}
           fill={getChartColor(2)}
@@ -199,7 +203,7 @@ function StreamSyncChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
         <Area
           type="monotone"
           dataKey="sync_count"
-          name="Sync"
+          name={t("sync")}
           stackId="mode"
           stroke={getChartColor(5)}
           fill={getChartColor(5)}
@@ -217,8 +221,9 @@ function StreamSyncChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
 // ---------------------------------------------------------------------------
 
 function LatencyChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
+  const { t } = useLocale();
   return (
-    <ChartPanel title="Latency">
+    <ChartPanel title={t("latency")}>
       <LineChart data={data}>
         <DashboardCartesianGrid />
         <XAxis dataKey="bucket" tickFormatter={formatBucketTime} {...AXIS_CONFIG} />
@@ -228,7 +233,7 @@ function LatencyChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
         <Line
           type="monotone"
           dataKey="avg_latency_ms"
-          name="Avg"
+          name={t("average")}
           stroke={CHART_COLORS.primary}
           strokeWidth={2}
           dot={false}
@@ -260,11 +265,12 @@ function LatencyChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
 }
 
 function TtftChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
+  const { t } = useLocale();
   const hasData = data.some((b) => b.avg_ttft_ms != null);
   if (!hasData) return null;
 
   return (
-    <ChartPanel title="Time to First Token">
+    <ChartPanel title={t("timeToFirstToken")}>
       <LineChart data={data}>
         <DashboardCartesianGrid />
         <XAxis dataKey="bucket" tickFormatter={formatBucketTime} {...AXIS_CONFIG} />
@@ -274,7 +280,7 @@ function TtftChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
         <Line
           type="monotone"
           dataKey="avg_ttft_ms"
-          name="Avg TTFT"
+          name={t("averageTtft")}
           stroke={getChartColor(3)}
           strokeWidth={2}
           dot={false}
@@ -284,7 +290,7 @@ function TtftChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
         <Line
           type="monotone"
           dataKey="p95_ttft_ms"
-          name="P95 TTFT"
+          name={t("p95Latency")}
           stroke={getChartColor(7)}
           strokeWidth={1.5}
           strokeDasharray="4 2"
@@ -302,13 +308,14 @@ function TtftChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
 // ---------------------------------------------------------------------------
 
 function ErrorRateChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
+  const { t } = useLocale();
   const withRate = data.map((b) => ({
     ...b,
     error_rate_pct: b.count > 0 ? (b.error_count / b.count) * 100 : 0,
   }));
 
   return (
-    <ChartPanel title="Error Rate">
+    <ChartPanel title={t("errorRate")}>
       <AreaChart data={withRate}>
         <defs>
           <linearGradient id="errorRateFill" x1="0" y1="0" x2="0" y2="1">
@@ -323,7 +330,7 @@ function ErrorRateChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
         <Area
           type="monotone"
           dataKey="error_rate_pct"
-          name="Error Rate"
+          name={t("errorRate")}
           stroke={CHART_COLORS.danger}
           fill="url(#errorRateFill)"
           strokeWidth={2}
@@ -339,8 +346,9 @@ function ErrorRateChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
 // ---------------------------------------------------------------------------
 
 function TokenBurnChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
+  const { t } = useLocale();
   return (
-    <ChartPanel title="Token Usage">
+    <ChartPanel title={t("tokenUsage")}>
       <AreaChart data={data}>
         <DashboardCartesianGrid />
         <XAxis dataKey="bucket" tickFormatter={formatBucketTime} {...AXIS_CONFIG} />
@@ -350,7 +358,7 @@ function TokenBurnChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
         <Area
           type="monotone"
           dataKey="input_tokens"
-          name="Input"
+          name={t("input")}
           stackId="tokens"
           stroke={getChartColor(8)}
           fill={getChartColor(8)}
@@ -361,7 +369,7 @@ function TokenBurnChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
         <Area
           type="monotone"
           dataKey="output_tokens"
-          name="Output"
+          name={t("output")}
           stackId="tokens"
           stroke={getChartColor(4)}
           fill={getChartColor(4)}
@@ -379,6 +387,7 @@ function TokenBurnChart({ data }: { data: ExtendedTimeseriesBucket[] }) {
 // ---------------------------------------------------------------------------
 
 function BreakdownBar({ title, data, limit = 5 }: { title: string; data: BreakdownEntry[]; limit?: number }) {
+  const { t } = useLocale();
   const top = data.slice(0, limit);
   const maxCount = top.length > 0 ? Math.max(...top.map((e) => e.count)) : 1;
 
@@ -388,7 +397,7 @@ function BreakdownBar({ title, data, limit = 5 }: { title: string; data: Breakdo
       <div className="space-y-2">
         {top.map((entry) => (
           <div key={entry.key} className="flex items-center gap-2">
-            <span className="text-meta w-24 truncate shrink-0">{entry.key || "(empty)"}</span>
+            <span className="text-meta w-24 truncate shrink-0">{entry.key || t("empty")}</span>
             <div className="flex-1 h-5 bg-background rounded-sm overflow-hidden">
               <div
                 className="h-full bg-primary/60 rounded-sm transition-all"
@@ -401,7 +410,7 @@ function BreakdownBar({ title, data, limit = 5 }: { title: string; data: Breakdo
           </div>
         ))}
         {top.length === 0 && (
-          <p className="text-meta">No data</p>
+          <p className="text-meta">{t("noData")}</p>
         )}
       </div>
     </div>
@@ -425,19 +434,20 @@ export function AnalyticsCharts({
   clientBreakdown = [],
   strategyBreakdown = [],
 }: AnalyticsChartsProps) {
+  const { t } = useLocale();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
   if (!mounted) {
     return (
       <div className="space-y-5 md:space-y-7">
-        <DashboardSegment title="Traffic">
+        <DashboardSegment title={t("traffic")}>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
             <ChartSkeleton />
             <ChartSkeleton />
           </div>
         </DashboardSegment>
-        <DashboardSegment title="Performance">
+        <DashboardSegment title={t("performance")}>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
             <ChartSkeleton />
             <ChartSkeleton />
@@ -449,26 +459,26 @@ export function AnalyticsCharts({
 
   return (
     <div className="space-y-5 md:space-y-7">
-      <ChartSection title="Traffic">
+      <ChartSection title={t("traffic")}>
         <TrafficVolumeChart data={timeseries} />
         <StreamSyncChart data={timeseries} />
       </ChartSection>
 
-      <ChartSection title="Performance">
+      <ChartSection title={t("performance")}>
         <LatencyChart data={timeseries} />
         <TtftChart data={timeseries} />
       </ChartSection>
 
-      <ChartSection title="Reliability">
+      <ChartSection title={t("reliability")}>
         <ErrorRateChart data={timeseries} />
         <TokenBurnChart data={timeseries} />
       </ChartSection>
 
-      <DashboardSegment title="Breakdowns">
+      <DashboardSegment title={t("breakdowns")}>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
-          <BreakdownBar title="Top Models" data={modelBreakdown} />
-          <BreakdownBar title="Top Clients" data={clientBreakdown} />
-          <BreakdownBar title="Top Strategies" data={strategyBreakdown} />
+          <BreakdownBar title={t("topModels")} data={modelBreakdown} />
+          <BreakdownBar title={t("topClients")} data={clientBreakdown} />
+          <BreakdownBar title={t("topStrategies")} data={strategyBreakdown} />
         </div>
       </DashboardSegment>
     </div>

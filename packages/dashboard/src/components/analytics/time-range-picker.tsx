@@ -9,15 +9,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { TimeRange } from "@/lib/analytics-filters";
+import { useLocale } from "@/components/locale-provider";
 
-const RANGE_OPTIONS: { value: TimeRange; label: string }[] = [
-  { value: "15m", label: "Last 15 min" },
-  { value: "1h", label: "Last 1 hour" },
-  { value: "6h", label: "Last 6 hours" },
-  { value: "24h", label: "Last 24 hours" },
-  { value: "7d", label: "Last 7 days" },
-  { value: "30d", label: "Last 30 days" },
-];
+const RANGE_OPTIONS = [
+  { value: "15m", label: "last15Minutes" },
+  { value: "1h", label: "last1Hour" },
+  { value: "6h", label: "last6Hours" },
+  { value: "24h", label: "last24Hours" },
+  { value: "7d", label: "last7Days" },
+  { value: "30d", label: "last30Days" },
+] as const satisfies ReadonlyArray<{ value: TimeRange; label: "last15Minutes" | "last1Hour" | "last6Hours" | "last24Hours" | "last7Days" | "last30Days" }>;
 
 interface TimeRangePickerProps {
   value: TimeRange;
@@ -25,6 +26,7 @@ interface TimeRangePickerProps {
 }
 
 export function TimeRangePicker({ value, onChange }: TimeRangePickerProps) {
+  const { t } = useLocale();
   return (
     <Select value={value} onValueChange={(v) => onChange(v as TimeRange)}>
       <SelectTrigger size="sm" className="text-xs min-w-[150px]">
@@ -34,7 +36,7 @@ export function TimeRangePicker({ value, onChange }: TimeRangePickerProps) {
       <SelectContent>
         {RANGE_OPTIONS.map((opt) => (
           <SelectItem key={opt.value} value={opt.value}>
-            {opt.label}
+            {t(opt.label)}
           </SelectItem>
         ))}
       </SelectContent>

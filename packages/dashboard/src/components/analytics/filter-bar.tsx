@@ -21,12 +21,13 @@ import {
   type AnalyticsFilters,
   type TimeRange,
 } from "@/lib/analytics-filters";
+import { useLocale } from "@/components/locale-provider";
 
 const STATUS_OPTIONS = ["success", "error"];
 const STREAM_OPTIONS = [
-  { value: "true", label: "Streaming" },
-  { value: "false", label: "Synchronous" },
-];
+  { value: "true", label: "streaming" },
+  { value: "false", label: "synchronous" },
+] as const;
 
 interface FilterBarProps {
   /** Available model names for the filter dropdown */
@@ -48,6 +49,7 @@ export function FilterBar({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { t } = useLocale();
 
   const filters = useMemo(
     () => searchParamsToFilters(searchParams),
@@ -149,10 +151,10 @@ export function FilterBar({
                 onValueChange={(v) => setDimensionFilter("model", v)}
               >
                 <SelectTrigger size="sm" className="text-xs min-w-[140px]">
-                  <SelectValue placeholder="All models" />
+                  <SelectValue placeholder={t("allModels")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__all__">All models</SelectItem>
+                  <SelectItem value="__all__">{t("allModels")}</SelectItem>
                   {models.filter(Boolean).map((m) => (
                     <SelectItem key={m} value={m}>
                       {m}
@@ -169,10 +171,10 @@ export function FilterBar({
                 onValueChange={(v) => setDimensionFilter("strategy", v)}
               >
                 <SelectTrigger size="sm" className="text-xs min-w-[140px]">
-                  <SelectValue placeholder="All strategies" />
+                  <SelectValue placeholder={t("allStrategies")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__all__">All strategies</SelectItem>
+                  <SelectItem value="__all__">{t("allStrategies")}</SelectItem>
                   {strategies.filter(Boolean).map((s) => (
                     <SelectItem key={s} value={s}>
                       {s}
@@ -189,10 +191,10 @@ export function FilterBar({
                 onValueChange={(v) => setDimensionFilter("upstream", v)}
               >
                 <SelectTrigger size="sm" className="text-xs min-w-[140px]">
-                  <SelectValue placeholder="All upstreams" />
+                  <SelectValue placeholder={t("allUpstreams")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__all__">All upstreams</SelectItem>
+                  <SelectItem value="__all__">{t("allUpstreams")}</SelectItem>
                   {upstreams.filter(Boolean).map((u) => (
                     <SelectItem key={u} value={u}>
                       {u}
@@ -208,13 +210,13 @@ export function FilterBar({
               onValueChange={(v) => setDimensionFilter("status", v)}
             >
               <SelectTrigger size="sm" className="text-xs min-w-[120px]">
-                <SelectValue placeholder="All statuses" />
+                <SelectValue placeholder={t("allStatuses")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__all__">All statuses</SelectItem>
+                <SelectItem value="__all__">{t("allStatuses")}</SelectItem>
                 {STATUS_OPTIONS.map((s) => (
                   <SelectItem key={s} value={s}>
-                    {s}
+                    {s === "success" ? t("success") : t("error")}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -232,13 +234,13 @@ export function FilterBar({
               }}
             >
               <SelectTrigger size="sm" className="text-xs min-w-[130px]">
-                <SelectValue placeholder="All modes" />
+                <SelectValue placeholder={t("allModes")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__all__">All modes</SelectItem>
+                <SelectItem value="__all__">{t("allModes")}</SelectItem>
                 {STREAM_OPTIONS.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
+                    {t(opt.label)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -251,11 +253,11 @@ export function FilterBar({
           <div className="flex items-center gap-1.5 ml-auto">
             <span className="text-xs text-muted-foreground">
               <Filter className="inline size-3 mr-0.5" />
-              {activeCount} active
+              {activeCount} {t("active")}
             </span>
             <Button variant="ghost" size="xs" onClick={resetFilters}>
               <RotateCcw className="size-3" />
-              Reset
+              {t("reset")}
             </Button>
           </div>
         )}
