@@ -66,7 +66,7 @@ export function RequestTable({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { locale } = useLocale();
+  const { locale, t } = useLocale();
 
   const currentSort = (searchParams.get("sort") ?? "timestamp") as SortColumn;
   const currentOrder = searchParams.get("order") ?? "desc";
@@ -175,16 +175,16 @@ export function RequestTable({
               <TableRow className="border-border hover:bg-transparent">
                 {isVisible("timestamp") && (
                   <TableHead aria-sort={getAriaSort("timestamp")} className="px-3 py-2.5 h-auto text-card-label font-medium">
-                    <SortButton column="timestamp">Time</SortButton>
+                    <SortButton column="timestamp">{t("time")}</SortButton>
                   </TableHead>
                 )}
-                {isVisible("model") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">Model</TableHead>}
-                {isVisible("path") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">Path</TableHead>}
-                {isVisible("client_format") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">Format</TableHead>}
-                {isVisible("status") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">Status</TableHead>}
+                {isVisible("model") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">{t("model")}</TableHead>}
+                {isVisible("path") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">{t("path")}</TableHead>}
+                {isVisible("client_format") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">{t("format")}</TableHead>}
+                {isVisible("status") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">{t("status")}</TableHead>}
                 {isVisible("latency_ms") && (
                   <TableHead aria-sort={getAriaSort("latency_ms")} className="px-3 py-2.5 h-auto text-card-label font-medium">
-                    <SortButton column="latency_ms">Latency</SortButton>
+                    <SortButton column="latency_ms">{t("latency")}</SortButton>
                   </TableHead>
                 )}
                 {isVisible("ttft_ms") && (
@@ -194,26 +194,26 @@ export function RequestTable({
                 )}
                 {isVisible("processing_ms") && (
                   <TableHead aria-sort={getAriaSort("processing_ms")} className="px-3 py-2.5 h-auto text-card-label font-medium">
-                    <SortButton column="processing_ms">Processing</SortButton>
+                    <SortButton column="processing_ms">{t("processing")}</SortButton>
                   </TableHead>
                 )}
                 {isVisible("tokens") && (
                   <TableHead aria-sort={getAriaSort("total_tokens")} className="px-3 py-2.5 h-auto text-card-label font-medium">
-                    <SortButton column="total_tokens">Tokens (in/out)</SortButton>
+                    <SortButton column="total_tokens">{t("tokensInOut")}</SortButton>
                   </TableHead>
                 )}
-                {isVisible("stream") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">Stream</TableHead>}
-                {isVisible("strategy") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">Strategy</TableHead>}
-                {isVisible("upstream") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">Upstream</TableHead>}
-                {isVisible("account_name") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">Account</TableHead>}
-                {isVisible("client_name") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">Client</TableHead>}
-                {isVisible("session_id") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">Session</TableHead>}
-                {isVisible("status_code") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">Code</TableHead>}
-                {isVisible("stop_reason") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">Stop Reason</TableHead>}
-                {isVisible("tool_call_count") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">Tools</TableHead>}
-                {isVisible("routing_path") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">Routing</TableHead>}
-                {isVisible("translated_model") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">Translated</TableHead>}
-                {isVisible("error_message") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">Error</TableHead>}
+                {isVisible("stream") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">{t("stream")}</TableHead>}
+                {isVisible("strategy") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">{t("strategy")}</TableHead>}
+                {isVisible("upstream") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">{t("upstream")}</TableHead>}
+                {isVisible("account_name") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">{t("account")}</TableHead>}
+                {isVisible("client_name") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">{t("client")}</TableHead>}
+                {isVisible("session_id") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">{t("session")}</TableHead>}
+                {isVisible("status_code") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">{t("code")}</TableHead>}
+                {isVisible("stop_reason") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">{t("stopReason")}</TableHead>}
+                {isVisible("tool_call_count") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">{t("tools")}</TableHead>}
+                {isVisible("routing_path") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">{t("routing")}</TableHead>}
+                {isVisible("translated_model") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">{t("translated")}</TableHead>}
+                {isVisible("error_message") && <TableHead className="px-3 py-2.5 h-auto text-card-label font-medium">{t("failure")}</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -223,7 +223,7 @@ export function RequestTable({
                     colSpan={visibleColumns.size}
                     className="text-center text-muted-foreground py-8"
                   >
-                    No requests found
+                    {t("noRequests")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -264,7 +264,7 @@ export function RequestTable({
                           variant={req.status === "success" ? "success" : "destructive"}
                           className="text-[10px]"
                         >
-                          {req.status}
+                          {req.status === "success" ? t("success") : t("failure")}
                         </Badge>
                       </TableCell>
                     )}
@@ -290,7 +290,7 @@ export function RequestTable({
                     )}
                     {isVisible("stream") && (
                       <TableCell className="px-3 py-2.5 text-xs text-muted-foreground">
-                        {req.stream ? "yes" : "no"}
+                        {req.stream ? t("yes") : t("no")}
                       </TableCell>
                     )}
                     {isVisible("strategy") && (
@@ -345,18 +345,18 @@ export function RequestTable({
       {/* Pagination */}
       <div className="flex items-center justify-between mt-4">
         <p className="text-sm text-muted-foreground">
-          {total != null ? `${total.toLocaleString()} total` : `${data.length} shown`}
+          {total != null ? `${total.toLocaleString()} ${t("totalShown")}` : `${data.length} ${t("shown")}`}
         </p>
         <div className="flex items-center gap-2">
           {canGoPrev && (
             <Button variant="outline" size="sm" onClick={goPrevPage}>
               <ChevronLeft className="h-4 w-4" />
-              Previous
+              {t("previous")}
             </Button>
           )}
           {hasMore && (
             <Button variant="outline" size="sm" onClick={goNextPage}>
-              Next
+              {t("next")}
               <ChevronRight className="h-4 w-4" />
             </Button>
           )}

@@ -9,6 +9,7 @@ import { ColumnConfig, getDefaultVisibleColumns } from "@/components/requests/co
 import { StatCard } from "@/components/stats/stat-card";
 import { formatCompact, formatLatency, formatPercent } from "@/lib/chart-config";
 import type { ExtendedRequestRecord, SummaryStats } from "@/lib/types";
+import { useLocale } from "@/components/locale-provider";
 
 interface RequestsContentProps {
   data: ExtendedRequestRecord[];
@@ -27,6 +28,7 @@ export function RequestsContent({
   models,
   summary,
 }: RequestsContentProps) {
+  const { t } = useLocale();
   const [visibleColumns, setVisibleColumns] = useState(getDefaultVisibleColumns);
   const [selectedRequest, setSelectedRequest] = useState<ExtendedRequestRecord | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -58,12 +60,12 @@ export function RequestsContent({
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
           <StatCard
             icon={Activity}
-            label="Requests"
+            label={t("requests")}
             value={formatCompact(summary.total_requests)}
           />
           <StatCard
             icon={AlertTriangle}
-            label="Error Rate"
+            label={t("errorRate")}
             value={formatPercent(summary.error_rate)}
             accent={
               summary.error_rate > 0.1
@@ -75,12 +77,12 @@ export function RequestsContent({
           />
           <StatCard
             icon={Clock}
-            label="Avg Latency"
+            label={t("averageLatency")}
             value={formatLatency(summary.avg_latency_ms)}
           />
           <StatCard
             icon={Zap}
-            label="Total Tokens"
+            label={t("totalTokens")}
             value={formatCompact(summary.total_tokens)}
           />
         </div>
@@ -89,8 +91,8 @@ export function RequestsContent({
       {/* Table toolbar: count badge + column config */}
       <div className="flex items-center justify-between">
         <p className="text-meta">
-          Showing {data.length}
-          {total != null && ` of ${total.toLocaleString()}`} matching requests
+          {t("showing")} {data.length}
+          {total != null && ` / ${total.toLocaleString()}`} {t("matchingRequests")}
         </p>
         <ColumnConfig visibleColumns={visibleColumns} onToggle={toggleColumn} />
       </div>

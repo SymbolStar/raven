@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatCompact, formatPercent } from "@/lib/chart-config";
 import type { BreakdownEntry } from "@/lib/types";
+import { useLocale } from "@/components/locale-provider";
 
 interface SessionsTableProps {
   data: BreakdownEntry[];
@@ -15,22 +16,15 @@ interface SessionsTableProps {
 }
 
 const COLUMNS = [
-  { key: "key", label: "Session ID", sortable: false },
-  { key: "client_name", label: "Client", sortable: false },
-  { key: "account_name", label: "Account", sortable: false },
-  { key: "count", label: "Requests", sortable: true },
-  { key: "duration", label: "Duration", sortable: false },
-  { key: "total_tokens", label: "Tokens", sortable: true },
-  { key: "error_rate", label: "Error Rate", sortable: true },
-  { key: "last_seen", label: "Last Active", sortable: true },
+  { key: "key", label: "sessionId", sortable: false }, { key: "client_name", label: "client", sortable: false }, { key: "account_name", label: "account", sortable: false }, { key: "count", label: "requests", sortable: true }, { key: "duration", label: "duration", sortable: false }, { key: "total_tokens", label: "totalTokens", sortable: true }, { key: "error_rate", label: "errorRate", sortable: true }, { key: "last_seen", label: "lastActive", sortable: true },
 ] as const;
 
-function formatRelativeTime(epoch: number): string {
+function formatRelativeTime(epoch: number, t: (key: "justNow" | "minutesAgo" | "hoursAgo" | "daysAgo") => string): string {
   const diff = Date.now() - epoch;
-  if (diff < 60000) return "just now";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  return `${Math.floor(diff / 86400000)}d ago`;
+  if (diff < 60000) return t("justNow");
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}${t("minutesAgo")}`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}${t("hoursAgo")}`;
+  return `${Math.floor(diff / 86400000)}${t("daysAgo")}`;
 }
 
 function formatDuration(firstSeen: number, lastSeen: number): string {
@@ -47,6 +41,7 @@ function truncateSessionId(id: string): string {
 }
 
 export function SessionsTable({ data, currentSort, currentOrder }: SessionsTableProps) {
+  const { t } = useLocale();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -83,7 +78,7 @@ export function SessionsTable({ data, currentSort, currentOrder }: SessionsTable
                       className="gap-1 -ml-1.5"
                       onClick={() => toggleSort(col.key)}
                     >
-                      {col.label}
+                      {t(col.label)}
                       {currentSort === col.key ? (
                         currentOrder === "desc" ? (
                           <ArrowDown className="size-3" />
@@ -95,7 +90,7 @@ export function SessionsTable({ data, currentSort, currentOrder }: SessionsTable
                       )}
                     </Button>
                   ) : (
-                    col.label
+                    t(col.label)
                   )}
                 </th>
               ))}
@@ -114,7 +109,7 @@ export function SessionsTable({ data, currentSort, currentOrder }: SessionsTable
               >
                 <td className="px-3 py-2.5 whitespace-nowrap">
                   <span className="font-mono text-xs font-medium text-foreground">
-                    {truncateSessionId(entry.key || "(unknown)")}
+                    {truncateSessionId(entry.key || t("unknown"))}
                   </span>
                 </td>
                 <td className="px-3 py-2.5 whitespace-nowrap text-xs text-muted-foreground">
@@ -141,14 +136,14 @@ export function SessionsTable({ data, currentSort, currentOrder }: SessionsTable
                   </Badge>
                 </td>
                 <td className="px-3 py-2.5 whitespace-nowrap text-xs text-muted-foreground">
-                  {formatRelativeTime(entry.last_seen)}
+                  {formatRelativeTime(entry.last_seen, t)}
                 </td>
               </tr>
             ))}
             {data.length === 0 && (
               <tr>
                 <td colSpan={COLUMNS.length} className="px-3 py-8 text-center text-muted-foreground">
-                  No session data found for the selected time range
+                  {t("noSessionData")}
                 </td>
               </tr>
             )}
