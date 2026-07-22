@@ -19,7 +19,9 @@ interface LocaleContextValue {
 
 const LocaleContext = createContext<LocaleContextValue>({
   locale: DEFAULT_LOCALE,
-  setLocale: () => {},
+  setLocale: () => {
+    // Safe default when a component renders outside LocaleProvider.
+  },
   t: (key) => translate(DEFAULT_LOCALE, key),
 });
 

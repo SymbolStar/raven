@@ -15,6 +15,7 @@ import {
   Cpu,
   ExternalLink,
   ChevronRight,
+  CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -249,14 +250,41 @@ function SetupGuidesSection({ baseUrl }: { baseUrl: string }) {
 
 function ClaudeCodeGuide({ baseUrl }: { baseUrl: string }) {
   const envConfig = `{
-  "ANTHROPIC_AUTH_TOKEN": "rk-...",
+  "ANTHROPIC_AUTH_TOKEN": "Raven local API key",
   "ANTHROPIC_BASE_URL": "${baseUrl}",
-  "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-opus-4.6",
-  "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4.6",
-  "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-opus-4.6",
-  "ANTHROPIC_MODEL": "claude-opus-4.6",
-  "ANTHROPIC_REASONING_MODEL": "claude-opus-4.6"
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL": "anthropic.claude-haiku-4-5",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL": "anthropic.claude-opus-4-6",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL": "anthropic.claude-sonnet-4-6",
+  "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+  "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"
 }`;
+  const [isConfiguring, setIsConfiguring] = useState(false);
+  const [configureMessage, setConfigureMessage] = useState<string | null>(null);
+  const [configureError, setConfigureError] = useState<string | null>(null);
+
+  const configureClaudeCode = async () => {
+    if (!window.confirm("Raven will back up and merge settings into ~/.claude/settings.json. Continue?")) return;
+
+    setIsConfiguring(true);
+    setConfigureError(null);
+    setConfigureMessage(null);
+    try {
+      const response = await fetch("/api/connect/claude-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseUrl }),
+      });
+      const result = await response.json() as { error?: string; message?: string; backupPath?: string | null };
+      if (!response.ok) throw new Error(result.error ?? `Request failed (${response.status})`);
+      setConfigureMessage(result.backupPath
+        ? `${result.message} Backup: ${result.backupPath}`
+        : result.message ?? "Claude Code configuration saved.");
+    } catch (error) {
+      setConfigureError(error instanceof Error ? error.message : "Failed to configure Claude Code");
+    } finally {
+      setIsConfiguring(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -266,11 +294,24 @@ function ClaudeCodeGuide({ baseUrl }: { baseUrl: string }) {
         env block:
       </p>
       <CodeBlock code={envConfig} className="text-xs" />
+      <div className="rounded-widget border border-border/60 bg-background p-3 space-y-3">
+        <div>
+          <p className="text-sm font-medium">Configure this Mac</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Raven will preserve your existing settings, back up the file, and merge this connection into Claude Code.
+          </p>
+        </div>
+        <Button size="sm" className="gap-1.5" onClick={configureClaudeCode} disabled={isConfiguring}>
+          {isConfiguring ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} /> : <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.5} />}
+          Configure Claude Code
+        </Button>
+        {configureMessage && <p className="text-xs text-emerald-600 dark:text-emerald-400">{configureMessage}</p>}
+        {configureError && <p className="text-xs text-destructive">{configureError}</p>}
+      </div>
       <div className="flex items-start gap-2 text-xs text-muted-foreground bg-background rounded-widget p-3">
         <ChevronRight className="h-3.5 w-3.5 shrink-0 mt-0.5" strokeWidth={1.5} />
         <span>
-          Replace <code className="bg-secondary/70 px-1 rounded">rk-...</code> with your API key from the Keys tab.
-          Adjust model names as needed.
+          The button above reads Raven&apos;s local API key automatically. For a remote Dashboard, copy this configuration and use an API key from the Keys tab.
         </span>
       </div>
     </div>
