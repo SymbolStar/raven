@@ -40,6 +40,21 @@ describe("sidebar module — auth config hook", () => {
     expect(mod.ALL_NAV_ITEMS).toBeDefined();
   });
 
+  it("does not expose Copilot pages in the sidebar navigation", async () => {
+    mockUseAuthConfig.mockReturnValue({
+      authEnabled: false,
+      provider: "local",
+      isLoading: false,
+      hasError: false,
+    });
+
+    vi.resetModules();
+
+    const { ALL_NAV_ITEMS, NAV_GROUPS } = await import("@/components/layout/sidebar");
+    expect(NAV_GROUPS.some((group) => group.label === "Copilot")).toBe(false);
+    expect(ALL_NAV_ITEMS.some((item) => item.href.startsWith("/copilot/"))).toBe(false);
+  });
+
   it("auth mode: module loads with useAuthConfig returning authEnabled=true", async () => {
     mockUseAuthConfig.mockReturnValue({
       authEnabled: true,
