@@ -15,6 +15,8 @@ import { Badge } from "@/components/ui/badge";
 import { formatCompact, formatLatency, formatPercent } from "@/lib/chart-config";
 import { cn } from "@/lib/utils";
 import type { BreakdownEntry } from "@/lib/types";
+import { useLocale } from "@/components/locale-provider";
+import type { MessageKey } from "@/lib/locale";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -28,10 +30,10 @@ interface ProvidersContentProps {
   routingPaths: BreakdownEntry[];
 }
 
-const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
-  { id: "strategy", label: "Strategies", icon: Route },
-  { id: "upstream", label: "Upstreams", icon: Globe },
-  { id: "routing", label: "Routing Paths", icon: Shuffle },
+const TABS: { id: TabId; label: MessageKey; icon: React.ElementType }[] = [
+  { id: "strategy", label: "strategies", icon: Route },
+  { id: "upstream", label: "upstreams", icon: Globe },
+  { id: "routing", label: "routingPaths", icon: Shuffle },
 ];
 
 // ---------------------------------------------------------------------------
@@ -39,28 +41,19 @@ const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
 // ---------------------------------------------------------------------------
 
 const COLUMNS = [
-  { key: "key", label: "Name", sortable: false },
-  { key: "count", label: "Requests", sortable: true },
-  { key: "total_tokens", label: "Tokens", sortable: true },
-  { key: "avg_latency_ms", label: "Avg Latency", sortable: true },
-  { key: "p95_latency_ms", label: "P95 Latency", sortable: true },
-  { key: "error_rate", label: "Error Rate", sortable: true },
-  { key: "last_seen", label: "Last Seen", sortable: true },
-] as const;
+  { key: "key", label: "name", sortable: false }, { key: "count", label: "requests", sortable: true }, { key: "total_tokens", label: "totalTokens", sortable: true }, { key: "avg_latency_ms", label: "averageLatency", sortable: true }, { key: "p95_latency_ms", label: "p95Latency", sortable: true }, { key: "error_rate", label: "errorRate", sortable: true }, { key: "last_seen", label: "lastSeen", sortable: true },
+] as const satisfies ReadonlyArray<{ key: string; label: MessageKey; sortable: boolean }>;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatRelativeTime(epoch: number): string {
+function formatRelativeTime(epoch: number, t: (key: "justNow" | "minutesAgo" | "hoursAgo" | "daysAgo") => string): string {
   const diff = Date.now() - epoch;
-  if (diff < 60000) return "just now";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  return `${Math.floor(diff / 86400000)}d ago`;
+  if (diff < 60000) return t("justNow"); if (diff < 3600000) return `${Math.floor(diff / 60000)}${t("minutesAgo")}`; if (diff < 86400000) return `${Math.floor(diff / 3600000)}${t("hoursAgo")}`; return `${Math.floor(diff / 86400000)}${t("daysAgo")}`;
 }
 
-function formatCellValue(entry: BreakdownEntry, key: string): string {
+function formatCellValue(entry: BreakdownEntry, key: string, t: (key: "justNow" | "minutesAgo" | "hoursAgo" | "daysAgo") => string): string {
   switch (key) {
     case "key":
       return entry.key || "(unknown)";
@@ -75,7 +68,7 @@ function formatCellValue(entry: BreakdownEntry, key: string): string {
     case "error_rate":
       return formatPercent(entry.error_rate);
     case "last_seen":
-      return formatRelativeTime(entry.last_seen);
+      return formatRelativeTime(entry.last_seen, t);
     default:
       return "";
   }
@@ -98,6 +91,7 @@ function filterKeyForTab(tab: TabId): string {
 // ---------------------------------------------------------------------------
 
 function DistributionBar({ data }: { data: BreakdownEntry[] }) {
+  const { t } = useLocale();
   if (data.length === 0) return null;
   const total = data.reduce((sum, d) => sum + d.count, 0);
   if (total === 0) return null;
@@ -137,7 +131,7 @@ function DistributionBar({ data }: { data: BreakdownEntry[] }) {
           return (
             <div key={entry.key} className="flex items-center gap-1.5 text-xs">
               <span className={cn("size-2 rounded-full shrink-0", BAR_COLORS[i % BAR_COLORS.length])} />
-              <span className="text-muted-foreground truncate max-w-[120px]">{entry.key || "(unknown)"}</span>
+              <span className="text-muted-foreground truncate max-w-[120px]">{entry.key || t("unknown")}</span>
               <span className="tabular-nums font-medium">{pct.toFixed(1)}%</span>
             </div>
           );
@@ -164,6 +158,7 @@ function RankingTable({
   onSort: (col: string) => void;
   onRowClick: (entry: BreakdownEntry) => void;
 }) {
+  const { t } = useLocale();
   return (
     <div className="bg-secondary rounded-card overflow-hidden">
       <div className="overflow-x-auto">
@@ -182,7 +177,7 @@ function RankingTable({
                       className="gap-1 -ml-1.5"
                       onClick={() => onSort(col.key)}
                     >
-                      {col.label}
+                      {t(col.label)}
                       {sortCol === col.key ? (
                         sortOrder === "desc" ? (
                           <ArrowDown className="size-3" />
@@ -194,7 +189,7 @@ function RankingTable({
                       )}
                     </Button>
                   ) : (
-                    col.label
+                    t(col.label)
                   )}
                 </th>
               ))}
@@ -211,7 +206,7 @@ function RankingTable({
                   <td key={col.key} className="px-3 py-2.5 whitespace-nowrap tabular-nums">
                     {col.key === "key" ? (
                       <span className="font-medium text-foreground">
-                        {entry.key || "(unknown)"}
+                        {entry.key || t("unknown")}
                       </span>
                     ) : col.key === "error_rate" ? (
                       <Badge
@@ -224,11 +219,11 @@ function RankingTable({
                         }
                         className="text-[10px] px-1.5"
                       >
-                        {formatCellValue(entry, col.key)}
+                        {formatCellValue(entry, col.key, t)}
                       </Badge>
                     ) : (
                       <span className="text-muted-foreground">
-                        {formatCellValue(entry, col.key)}
+                        {formatCellValue(entry, col.key, t)}
                       </span>
                     )}
                   </td>
@@ -238,7 +233,7 @@ function RankingTable({
             {data.length === 0 && (
               <tr>
                 <td colSpan={COLUMNS.length} className="px-3 py-8 text-center text-muted-foreground">
-                  No data found for the selected time range
+                  {t("noProviderData")}
                 </td>
               </tr>
             )}
@@ -254,6 +249,7 @@ function RankingTable({
 // ---------------------------------------------------------------------------
 
 export function ProvidersContent({ strategies, upstreams, routingPaths }: ProvidersContentProps) {
+  const { t } = useLocale();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabId>("strategy");
@@ -328,7 +324,7 @@ export function ProvidersContent({ strategies, upstreams, routingPaths }: Provid
             )}
           >
             <tab.icon className="size-3.5" />
-            {tab.label}
+            {t(tab.label)}
           </button>
         ))}
       </div>

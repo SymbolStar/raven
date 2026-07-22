@@ -1,17 +1,16 @@
 import { Suspense } from "react";
-import { Users, Activity, Zap, AlertTriangle } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
-import { StatCard } from "@/components/stats/stat-card";
 import { FetchError } from "@/components/fetch-error";
 import { FilterBar } from "@/components/analytics/filter-bar";
 import { safeFetch } from "@/lib/proxy";
-import { formatCompact, formatPercent } from "@/lib/chart-config";
 import type { BreakdownEntry } from "@/lib/types";
 import {
   searchParamsToFilters,
   filtersToApiQuery,
 } from "@/lib/analytics-filters";
 import { ClientsTable } from "./clients-table";
+import { AnalyticsPageHeader } from "../analytics-page-header";
+import { ClientsStats } from "./clients-stats";
 
 export const metadata = { title: "Clients" };
 
@@ -39,10 +38,7 @@ export default async function ClientsPage({ searchParams }: PageProps) {
     return (
       <AppShell breadcrumbs={[{ label: "Clients" }]}>
         <div className="space-y-4 md:space-y-6">
-          <div className="flex flex-col gap-1">
-            <h1 className="text-display">Clients</h1>
-            <p className="text-meta">Top client applications by request volume.</p>
-          </div>
+          <AnalyticsPageHeader title="clients" description="clientsDescription" />
           <FetchError title="Failed to load client data" message={result.error} />
         </div>
       </AppShell>
@@ -52,10 +48,7 @@ export default async function ClientsPage({ searchParams }: PageProps) {
   return (
     <AppShell breadcrumbs={[{ label: "Clients" }]}>
       <div className="space-y-4 md:space-y-6">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-display">Clients</h1>
-          <p className="text-meta">Top client applications by request volume.</p>
-        </div>
+        <AnalyticsPageHeader title="clients" description="clientsDescription" />
         <Suspense>
           <FilterBar compact />
         </Suspense>
@@ -70,17 +63,7 @@ export default async function ClientsPage({ searchParams }: PageProps) {
           const avgErrorRate =
             totalRequests > 0 ? totalErrors / totalRequests : 0;
           return (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
-              <StatCard icon={Users} label="Total Clients" value={formatCompact(totalClients)} />
-              <StatCard icon={Activity} label="Total Requests" value={formatCompact(totalRequests)} />
-              <StatCard icon={Zap} label="Total Tokens" value={formatCompact(totalTokens)} />
-              <StatCard
-                icon={AlertTriangle}
-                label="Avg Error Rate"
-                value={formatPercent(avgErrorRate)}
-                accent={avgErrorRate > 0.1 ? "danger" : avgErrorRate > 0.05 ? "warning" : "default"}
-              />
-            </div>
+            <ClientsStats clients={totalClients} requests={totalRequests} tokens={totalTokens} errorRate={avgErrorRate} />
           );
         })()}
         <ClientsTable data={result.data} currentSort={sort} currentOrder={order} />
