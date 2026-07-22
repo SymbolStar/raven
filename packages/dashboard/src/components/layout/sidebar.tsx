@@ -8,8 +8,6 @@ import {
   LayoutDashboard,
   Boxes,
   Cable,
-  Cpu,
-  CircleUser,
   PanelLeft,
   LogOut,
   ChevronUp,
@@ -68,14 +66,6 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/sessions", label: "Sessions", icon: MessageSquare },
       { href: "/providers", label: "Providers", icon: Route },
       { href: "/logs", label: "Logs", icon: Terminal },
-    ],
-  },
-  {
-    label: "Copilot",
-    defaultOpen: true,
-    items: [
-      { href: "/copilot/models", label: "Models", icon: Cpu },
-      { href: "/copilot/account", label: "Account", icon: CircleUser },
     ],
   },
   {
