@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useLocale } from "@/components/locale-provider";
 import {
   Select,
   SelectContent,
@@ -41,6 +42,7 @@ interface Socks5ContentProps {
 type PasswordState = "pristine" | "edited" | "cleared";
 
 export function Socks5Content({ data }: Socks5ContentProps) {
+  const { t } = useLocale();
   const router = useRouter();
   const [enabled, setEnabled] = useState(data.enabled);
   const [host, setHost] = useState(data.host ?? "");
@@ -114,12 +116,12 @@ export function Socks5Content({ data }: Socks5ContentProps) {
     } catch (err) {
       setTestResult({
         success: false,
-        error: err instanceof Error ? err.message : "Network error",
+        error: err instanceof Error ? err.message : t("connectionFailed"),
       });
     } finally {
       setTesting(false);
     }
-  }, [host, port, username, password, passwordState, data.hasPassword]);
+  }, [host, port, username, password, passwordState, data.hasPassword, t]);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -169,11 +171,11 @@ export function Socks5Content({ data }: Socks5ContentProps) {
       } else {
         const body = await res.json().catch(() => null);
         setError(
-          body?.error?.message ?? body?.error ?? "Failed to save settings",
+          body?.error?.message ?? body?.error ?? t("failure"),
         );
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error");
+      setError(err instanceof Error ? err.message : t("connectionFailed"));
     } finally {
       setSaving(false);
     }
@@ -187,17 +189,16 @@ export function Socks5Content({ data }: Socks5ContentProps) {
     copilotPolicy,
     providerPolicies,
     data.providerPolicies,
-    router,
+    router, t,
   ]);
 
   return (
     <section>
       <h2 className="text-sm font-medium text-muted-foreground mb-3">
-        SOCKS5 Proxy
+        {t("socks5Proxy")}
       </h2>
       <p className="text-xs text-muted-foreground mb-4">
-        Route upstream requests through a SOCKS5 proxy to hide the
-        server&apos;s exit IP. Useful when deployed on VPS with datacenter IPs.
+        {t("socks5Description")}
       </p>
 
       <div className="rounded-card bg-secondary p-4 space-y-4">
@@ -205,14 +206,14 @@ export function Socks5Content({ data }: Socks5ContentProps) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Globe className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Enable SOCKS5 Proxy</span>
+            <span className="text-sm font-medium">{t("enableSocks5")}</span>
           </div>
           <div className="flex items-center gap-2">
             {data.enabled && (
               <span
                 className={`text-xs ${data.bridgeStatus === "running" ? "text-green-500" : "text-red-500"}`}
               >
-                Bridge: {data.bridgeStatus}
+                {t("bridge")}: {data.bridgeStatus}
               </span>
             )}
             <Switch
@@ -226,12 +227,12 @@ export function Socks5Content({ data }: Socks5ContentProps) {
         {/* Connection settings */}
         <div className="rounded bg-background p-3 space-y-3">
           <p className="text-xs font-medium text-muted-foreground">
-            Connection
+            {t("connection")}
           </p>
 
           <div className="grid grid-cols-[1fr_100px] gap-2">
             <div>
-              <Label className="text-xs">Host</Label>
+              <Label className="text-xs">{t("host")}</Label>
               <Input
                 value={host}
                 onChange={(e) => setHost(e.target.value)}
@@ -241,7 +242,7 @@ export function Socks5Content({ data }: Socks5ContentProps) {
               />
             </div>
             <div>
-              <Label className="text-xs">Port</Label>
+              <Label className="text-xs">{t("port")}</Label>
               <Input
                 value={port}
                 onChange={(e) => setPort(e.target.value)}
@@ -256,8 +257,7 @@ export function Socks5Content({ data }: Socks5ContentProps) {
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label className="text-xs">
-                Username{" "}
-                <span className="text-muted-foreground">(optional)</span>
+                {t("username")} <span className="text-muted-foreground">({t("optional")})</span>
               </Label>
               <Input
                 value={username}
@@ -269,8 +269,7 @@ export function Socks5Content({ data }: Socks5ContentProps) {
             </div>
             <div>
               <Label className="text-xs">
-                Password{" "}
-                <span className="text-muted-foreground">(optional)</span>
+                {t("password")} <span className="text-muted-foreground">({t("optional")})</span>
               </Label>
               <div className="flex gap-1">
                 <Input
@@ -279,10 +278,10 @@ export function Socks5Content({ data }: Socks5ContentProps) {
                   onChange={handlePasswordChange}
                   placeholder={
                     passwordState === "cleared"
-                      ? "Password cleared"
+                      ? t("passwordCleared")
                       : data.hasPassword && passwordState === "pristine"
                         ? "••••••••"
-                        : "password"
+                        : t("password")
                   }
                   className="h-8 text-xs font-mono flex-1"
                   disabled={saving}
@@ -302,7 +301,7 @@ export function Socks5Content({ data }: Socks5ContentProps) {
               </div>
               {passwordState === "cleared" && (
                 <p className="text-xs text-amber-500 mt-0.5">
-                  Password will be cleared on save
+                  {t("passwordWillClear")}
                 </p>
               )}
             </div>
@@ -320,7 +319,7 @@ export function Socks5Content({ data }: Socks5ContentProps) {
               {testing ? (
                 <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
               ) : null}
-              Test Connection
+              {t("testConnection")}
             </Button>
             {testResult && (
               <span
@@ -329,12 +328,12 @@ export function Socks5Content({ data }: Socks5ContentProps) {
                 {testResult.success ? (
                   <>
                     <CheckCircle className="h-3 w-3" />
-                    Connected{testResult.ip ? ` via ${testResult.ip}` : ""} ({testResult.latencyMs}ms)
+                    {testResult.ip ? t("connectedVia").replace("{ip}", testResult.ip).replace("{latency}", String(testResult.latencyMs)) : t("connected")}
                   </>
                 ) : (
                   <>
                     <XCircle className="h-3 w-3" />
-                    {testResult.error ?? "Connection failed"}
+                    {testResult.error ?? t("connectionFailed")}
                   </>
                 )}
               </span>
@@ -345,10 +344,10 @@ export function Socks5Content({ data }: Socks5ContentProps) {
         {/* Upstream routing */}
         <div className="rounded bg-background p-3 space-y-3">
           <p className="text-xs font-medium text-muted-foreground">
-            Upstream Routing
+            {t("upstreamRouting")}
           </p>
           <p className="text-xs text-muted-foreground">
-            Default: Copilot &amp; GitHub = proxied, Custom providers = direct.
+            {t("socks5DefaultRouting")}
           </p>
 
           {/* Copilot policy */}
@@ -359,9 +358,9 @@ export function Socks5Content({ data }: Socks5ContentProps) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="default">Default (On)</SelectItem>
-                <SelectItem value="on">Force On</SelectItem>
-                <SelectItem value="off">Force Off</SelectItem>
+                <SelectItem value="default">{t("defaultOn")}</SelectItem>
+                <SelectItem value="on">{t("forceOn")}</SelectItem>
+                <SelectItem value="off">{t("forceOff")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -377,7 +376,7 @@ export function Socks5Content({ data }: Socks5ContentProps) {
                       p.supports_models_endpoint === false && (
                         <span className="text-xs text-amber-500 flex items-center gap-1">
                           <AlertTriangle className="h-3 w-3" />
-                          Re-probe needed
+                          {t("reProbeNeeded")}
                         </span>
                       )}
                   </div>
@@ -389,9 +388,9 @@ export function Socks5Content({ data }: Socks5ContentProps) {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="null">Default (Off)</SelectItem>
-                      <SelectItem value="1">Force On</SelectItem>
-                      <SelectItem value="0">Force Off</SelectItem>
+                      <SelectItem value="null">{t("defaultOff")}</SelectItem>
+                      <SelectItem value="1">{t("forceOn")}</SelectItem>
+                      <SelectItem value="0">{t("forceOff")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -405,7 +404,7 @@ export function Socks5Content({ data }: Socks5ContentProps) {
           {saveSuccess && (
             <span className="text-xs text-green-500 flex items-center gap-1">
               <CheckCircle className="h-3 w-3" />
-              Settings saved
+              {t("settingsSaved")}
             </span>
           )}
           {error && (
@@ -423,7 +422,7 @@ export function Socks5Content({ data }: Socks5ContentProps) {
             {saving ? (
               <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
             ) : null}
-            Save
+            {t("save")}
           </Button>
         </div>
       </div>

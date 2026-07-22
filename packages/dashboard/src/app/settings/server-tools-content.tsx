@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Loader2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
+import { useLocale } from "@/components/locale-provider"
+import type { MessageKey } from "@/lib/locale"
 
 interface ServerToolsContentProps {
   data: Record<string, { enabled: boolean; has_api_key: boolean }>
@@ -15,15 +17,15 @@ interface ServerToolsContentProps {
 const SERVER_TOOL_ITEMS = [
   {
     id: "web_search",
-    label: "Web Search",
-    description:
-      "Replace Anthropic's built-in web_search with Tavily API. Required when routing through GitHub Copilot upstream.",
+    label: "webSearch" as MessageKey,
+    description: "webSearchDescription" as MessageKey,
     key: "st_web_search_enabled",
     apiKeyKey: "st_web_search_api_key",
   },
 ]
 
 export function ServerToolsContent({ data }: ServerToolsContentProps) {
+  const { t } = useLocale()
   const router = useRouter()
   const webSearch = data.web_search
 
@@ -62,7 +64,7 @@ export function ServerToolsContent({ data }: ServerToolsContentProps) {
 
   async function handleSaveKey() {
     if (!apiKey.trim()) {
-      setKeyError("API key is required")
+      setKeyError(t("apiKeyRequired"))
       return
     }
 
@@ -93,10 +95,10 @@ export function ServerToolsContent({ data }: ServerToolsContentProps) {
   return (
     <section>
       <h2 className="text-sm font-medium text-muted-foreground mb-3">
-        Server Tools
+        {t("serverTools")}
       </h2>
       <p className="text-xs text-muted-foreground mb-4">
-        Replace Anthropic server-side tools with third-party APIs. Required when routing through GitHub Copilot upstream.
+        {t("serverToolsPageDescription")}
       </p>
       <div className="grid gap-3">
         {SERVER_TOOL_ITEMS.map((item) => {
@@ -111,9 +113,9 @@ export function ServerToolsContent({ data }: ServerToolsContentProps) {
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0 flex-1">
                   <Label htmlFor={`st-${item.id}`} className="text-sm font-medium cursor-pointer">
-                    {item.label}
+                    {t(item.label)}
                   </Label>
-                  <p className="text-xs text-muted-foreground mt-0.5">{item.description}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{t(item.description)}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {saving && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
@@ -132,18 +134,18 @@ export function ServerToolsContent({ data }: ServerToolsContentProps) {
                 <div className="mt-4 pt-4 border-t border-border/30">
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm">API Key</span>
+                      <span className="text-sm">{t("apiKey")}</span>
                       {hasKey && !apiKey && (
                         <span className="text-xs text-green-600 flex items-center gap-1">
                           <span className="size-1.5 rounded-full bg-green-600" />
-                          Configured
+                          {t("configured")}
                         </span>
                       )}
                     </div>
                     <div className="flex gap-2">
                       <Input
                         type="password"
-                        placeholder={hasKey ? "Update API key..." : "Enter Tavily API key..."}
+                        placeholder={hasKey ? t("updateApiKey") : t("enterTavilyApiKey")}
                         value={apiKey}
                         onChange={(e) => setApiKey(e.target.value)}
                         disabled={savingKey}
@@ -159,18 +161,18 @@ export function ServerToolsContent({ data }: ServerToolsContentProps) {
                         {savingKey ? (
                           <Loader2 className="h-3 w-3 animate-spin" />
                         ) : (
-                          "Save"
+                          t("save")
                         )}
                       </Button>
                     </div>
                     {keyError && <p className="text-xs text-destructive">{keyError}</p>}
                     {!hasKey && itemEnabled && (
                       <p className="text-xs text-amber-600 dark:text-amber-500">
-                        API key required for search functionality
+                        {t("apiKeyRequiredForSearch")}
                       </p>
                     )}
                     <p className="text-xs text-muted-foreground">
-                      Get your API key at{" "}
+                      {t("getApiKeyAt")}{" "}
                       <a
                         href="https://tavily.com/"
                         target="_blank"

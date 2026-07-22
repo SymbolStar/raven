@@ -32,6 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { useLocale } from "@/components/locale-provider";
 import {
   Tooltip,
   TooltipContent,
@@ -51,12 +52,13 @@ interface UpstreamsContentProps {
 }
 
 export function UpstreamsContent({ providers }: UpstreamsContentProps) {
+  const { t } = useLocale();
   return (
     <section>
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
           <ArrowUpDown className="h-4 w-4" strokeWidth={1.5} />
-          Custom Upstream Providers
+          {t("customUpstreamProviders")}
         </h2>
         <CreateProviderDialog />
       </div>
@@ -64,9 +66,9 @@ export function UpstreamsContent({ providers }: UpstreamsContentProps) {
       {providers.length === 0 ? (
         <div className="rounded-card bg-secondary px-6 py-8 text-center">
           <ArrowUpDown className="h-8 w-8 text-muted-foreground/50 mx-auto mb-2" strokeWidth={1.5} />
-          <p className="text-sm text-muted-foreground">No upstream providers configured</p>
+          <p className="text-sm text-muted-foreground">{t("noUpstreamProviders")}</p>
           <p className="text-xs text-muted-foreground/70 mt-1">
-            Add custom providers to route specific models to external APIs
+            {t("addProviderHint")}
           </p>
         </div>
       ) : (
@@ -74,13 +76,7 @@ export function UpstreamsContent({ providers }: UpstreamsContentProps) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead className="hidden sm:table-cell">Format</TableHead>
-                <TableHead className="hidden lg:table-cell">Base URL</TableHead>
-                <TableHead className="hidden md:table-cell">Model Patterns</TableHead>
-                <TableHead className="hidden xl:table-cell">API Key</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-24">Actions</TableHead>
+                <TableHead>{t("name")}</TableHead><TableHead className="hidden sm:table-cell">{t("format")}</TableHead><TableHead className="hidden lg:table-cell">{t("baseUrl")}</TableHead><TableHead className="hidden md:table-cell">{t("modelPatterns")}</TableHead><TableHead className="hidden xl:table-cell">{t("apiKey")}</TableHead><TableHead>{t("status")}</TableHead><TableHead className="w-24">{t("actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -100,7 +96,7 @@ export function UpstreamsContent({ providers }: UpstreamsContentProps) {
                   <TableCell className="hidden md:table-cell">
                     <div className="flex flex-wrap gap-1">
                       {provider.model_patterns.length === 0 ? (
-                        <span className="text-xs text-muted-foreground">None</span>
+                        <span className="text-xs text-muted-foreground">{t("none")}</span>
                       ) : (
                         provider.model_patterns.map((pattern) => (
                           <Badge key={pattern} variant="secondary" className="font-mono text-[10px]">
@@ -115,9 +111,9 @@ export function UpstreamsContent({ providers }: UpstreamsContentProps) {
                   </TableCell>
                   <TableCell>
                     {provider.is_enabled ? (
-                      <Badge variant="success" className="text-[10px]">Enabled</Badge>
+                      <Badge variant="success" className="text-[10px]">{t("enabled")}</Badge>
                     ) : (
-                      <Badge variant="secondary" className="text-[10px]">Disabled</Badge>
+                      <Badge variant="secondary" className="text-[10px]">{t("disabled")}</Badge>
                     )}
                   </TableCell>
                   <TableCell>
@@ -140,6 +136,7 @@ export function UpstreamsContent({ providers }: UpstreamsContentProps) {
 // ── Health Check Dialog ──
 
 function HealthCheckDialog({ provider }: { provider: ProviderPublic }) {
+  const { t } = useLocale();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<UpstreamModelsResponse | null>(null);
@@ -186,12 +183,12 @@ function HealthCheckDialog({ provider }: { provider: ProviderPublic }) {
         <Tooltip>
           <TooltipTrigger asChild>
             <DialogTrigger asChild>
-              <Button size="icon-xs" variant="ghost" aria-label="Health check">
+              <Button size="icon-xs" variant="ghost" aria-label={t("healthCheck")}>
                 <Activity className="h-3.5 w-3.5" strokeWidth={1.5} />
               </Button>
             </DialogTrigger>
           </TooltipTrigger>
-          <TooltipContent>Health Check</TooltipContent>
+          <TooltipContent>{t("healthCheck")}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
       <DialogContent className="max-w-lg max-h-[80vh] flex flex-col">
@@ -200,18 +197,16 @@ function HealthCheckDialog({ provider }: { provider: ProviderPublic }) {
             {provider.name}
             {(notSupported || data) && (
               modelsNotSupported ? (
-                <Badge variant="secondary" className="text-[10px]">Models API N/A</Badge>
+                <Badge variant="secondary" className="text-[10px]">{t("modelsApiUnavailable")}</Badge>
               ) : data?.healthy ? (
-                <Badge variant="success" className="text-[10px]">Healthy</Badge>
+                <Badge variant="success" className="text-[10px]">{t("healthy")}</Badge>
               ) : (
-                <Badge variant="destructive" className="text-[10px]">Unhealthy</Badge>
+                <Badge variant="destructive" className="text-[10px]">{t("unhealthy")}</Badge>
               )
             )}
           </DialogTitle>
           <DialogDescription>
-            {loading ? "Checking upstream..." :
-              modelsNotSupported ? "This provider does not support the models endpoint" :
-              data?.healthy ? `${data.total} models available` : "Connection status"}
+            {loading ? t("checkingUpstream") : modelsNotSupported ? t("modelsEndpointUnsupported") : data?.healthy ? t("modelsAvailable").replace("{count}", String(data.total)) : t("connectionStatus")}
           </DialogDescription>
         </DialogHeader>
 
@@ -225,10 +220,9 @@ function HealthCheckDialog({ provider }: { provider: ProviderPublic }) {
               <div className="flex items-start gap-2">
                 <AlertCircle className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
                 <div className="space-y-1">
-                  <p className="text-sm font-medium">Models endpoint not supported</p>
+                  <p className="text-sm font-medium">{t("modelsEndpointUnavailableTitle")}</p>
                   <p className="text-xs text-muted-foreground">
-                    This provider&apos;s API does not expose a /v1/models endpoint.
-                    The provider may still work for chat completions.
+                    {t("modelsEndpointUnavailableDescription")}
                   </p>
                 </div>
               </div>
@@ -238,7 +232,7 @@ function HealthCheckDialog({ provider }: { provider: ProviderPublic }) {
               <div className="flex items-start gap-2">
                 <AlertCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
                 <div className="space-y-1">
-                  <p className="text-sm font-medium text-destructive">Connection Failed</p>
+                  <p className="text-sm font-medium text-destructive">{t("connectionFailed")}</p>
                   <p className="text-xs text-muted-foreground">{data.error.message}</p>
                 </div>
               </div>
@@ -251,7 +245,7 @@ function HealthCheckDialog({ provider }: { provider: ProviderPublic }) {
                   <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
                   <div className="space-y-1">
                     <p className="text-xs text-amber-600 dark:text-amber-400">
-                      Claude Code requires ~40K tokens context window. Models with smaller context may fail with &quot;prompt too long&quot; errors.
+                      {t("localModelContextWarning")}
                     </p>
                   </div>
                 </div>
@@ -275,10 +269,10 @@ function HealthCheckDialog({ provider }: { provider: ProviderPublic }) {
         <DialogFooter>
           {!modelsNotSupported && (
             <Button variant="outline" onClick={handleRefresh} disabled={loading}>
-              {loading ? "Checking..." : "Refresh"}
+              {loading ? t("checking") : t("refresh")}
             </Button>
           )}
-          <Button onClick={() => setOpen(false)}>Close</Button>
+          <Button onClick={() => setOpen(false)}>{t("close")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -288,6 +282,7 @@ function HealthCheckDialog({ provider }: { provider: ProviderPublic }) {
 // ── Model Item with Copy ──
 
 function ModelItem({ model }: { model: string }) {
+  const { t } = useLocale();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -308,7 +303,7 @@ function ModelItem({ model }: { model: string }) {
         variant="ghost"
         onClick={handleCopy}
         className="opacity-0 group-hover:opacity-100 transition-opacity"
-        aria-label="Copy model name"
+        aria-label={t("copyModelName")}
       >
         {copied ? (
           <Check className="h-3 w-3 text-green-500" strokeWidth={1.5} />
@@ -323,6 +318,7 @@ function ModelItem({ model }: { model: string }) {
 // ── Create Provider Dialog ──
 
 function CreateProviderDialog() {
+  const { t } = useLocale();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -339,7 +335,7 @@ function CreateProviderDialog() {
   });
 
   const handleSubmit = async () => {
-    const validationError = validateFormData(formData);
+    const validationError = validateFormData(formData, false, t);
     if (validationError) {
       setError(validationError);
       return;
@@ -359,7 +355,7 @@ function CreateProviderDialog() {
         const data = await res.json();
         const errMsg = typeof data.error === "string"
           ? data.error
-          : data.error?.message ?? "Failed to create provider";
+          : data.error?.message ?? t("failure");
         setError(errMsg);
         return;
       }
@@ -377,7 +373,7 @@ function CreateProviderDialog() {
       });
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error");
+      setError(err instanceof Error ? err.message : t("connectionFailed"));
     } finally {
       setLoading(false);
     }
@@ -388,14 +384,14 @@ function CreateProviderDialog() {
       <DialogTrigger asChild>
         <Button size="sm" variant="outline" className="gap-1.5">
           <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
-          Add Provider
+          {t("add")}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Add Upstream Provider</DialogTitle>
+          <DialogTitle>{t("addUpstreamProvider")}</DialogTitle>
           <DialogDescription>
-            Configure a custom upstream provider to route specific models.
+            {t("addUpstreamDescription")}
           </DialogDescription>
         </DialogHeader>
         <ProviderForm
@@ -406,10 +402,10 @@ function CreateProviderDialog() {
         />
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>
-            Cancel
+            {t("cancel")}
           </Button>
           <Button onClick={handleSubmit} disabled={loading}>
-            {loading ? "Creating..." : "Create"}
+            {loading ? t("creating") : t("create")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -420,6 +416,7 @@ function CreateProviderDialog() {
 // ── Edit Provider Dialog ──
 
 function EditProviderDialog({ provider }: { provider: ProviderPublic }) {
+  const { t } = useLocale();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -435,7 +432,7 @@ function EditProviderDialog({ provider }: { provider: ProviderPublic }) {
   });
 
   const handleSubmit = async () => {
-    const validationError = validateFormData(formData, true);
+    const validationError = validateFormData(formData, true, t);
     if (validationError) {
       setError(validationError);
       return;
@@ -455,7 +452,7 @@ function EditProviderDialog({ provider }: { provider: ProviderPublic }) {
         const data = await res.json();
         const errMsg = typeof data.error === "string"
           ? data.error
-          : data.error?.message ?? "Failed to update provider";
+          : data.error?.message ?? t("failure");
         setError(errMsg);
         return;
       }
@@ -463,7 +460,7 @@ function EditProviderDialog({ provider }: { provider: ProviderPublic }) {
       setOpen(false);
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error");
+      setError(err instanceof Error ? err.message : t("connectionFailed"));
     } finally {
       setLoading(false);
     }
@@ -472,15 +469,15 @@ function EditProviderDialog({ provider }: { provider: ProviderPublic }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="icon-xs" variant="ghost" aria-label="Edit provider">
+        <Button size="icon-xs" variant="ghost" aria-label={t("editProvider")}>
           <Edit2 className="h-3.5 w-3.5" strokeWidth={1.5} />
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Edit Provider</DialogTitle>
+          <DialogTitle>{t("editProvider")}</DialogTitle>
           <DialogDescription>
-            Update the configuration for {provider.name}.
+            {t("editProviderDescription").replace("{name}", provider.name)}
           </DialogDescription>
         </DialogHeader>
         <ProviderForm
@@ -492,10 +489,10 @@ function EditProviderDialog({ provider }: { provider: ProviderPublic }) {
         />
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>
-            Cancel
+            {t("cancel")}
           </Button>
           <Button onClick={handleSubmit} disabled={loading}>
-            {loading ? "Saving..." : "Save"}
+            {loading ? t("saving") : t("save")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -506,6 +503,7 @@ function EditProviderDialog({ provider }: { provider: ProviderPublic }) {
 // ── Delete Provider Button ──
 
 function DeleteProviderButton({ id, name }: { id: string; name: string }) {
+  const { t } = useLocale();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -514,7 +512,7 @@ function DeleteProviderButton({ id, name }: { id: string; name: string }) {
     setLoading(true);
     try {
       const res = await fetch(`/api/upstreams/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete provider");
+      if (!res.ok) throw new Error(t("failure"));
       setOpen(false);
       router.refresh();
     } catch {
@@ -527,23 +525,23 @@ function DeleteProviderButton({ id, name }: { id: string; name: string }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="icon-xs" variant="ghost" aria-label="Delete provider">
+        <Button size="icon-xs" variant="ghost" aria-label={t("deleteProvider")}>
           <Trash2 className="h-3.5 w-3.5 text-destructive" strokeWidth={1.5} />
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Delete Provider</DialogTitle>
+          <DialogTitle>{t("deleteProvider")}</DialogTitle>
           <DialogDescription>
-            Are you sure you want to delete <strong>{name}</strong>? This action cannot be undone.
+            {t("deleteProviderDescription").replace("{name}", name)}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)} disabled={loading}>
-            Cancel
+            {t("cancel")}
           </Button>
           <Button variant="destructive" onClick={handleDelete} disabled={loading}>
-            {loading ? "Deleting..." : "Delete"}
+            {loading ? t("deleting") : t("deleteProvider")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -568,6 +566,7 @@ function ProviderForm<T extends CreateProviderInput | UpdateProviderInput>({
   onErrorChange,
   isEdit = false,
 }: ProviderFormProps<T>) {
+  const { t } = useLocale();
   const patternsInput = data.model_patterns?.join(", ") ?? "";
 
   const handlePatternsChange = (value: string) => {
@@ -583,7 +582,7 @@ function ProviderForm<T extends CreateProviderInput | UpdateProviderInput>({
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="name">Name</Label>
+          <Label htmlFor="name">{t("name")}</Label>
           <Input
             id="name"
             placeholder="e.g. Zhipu GLM"
@@ -597,7 +596,7 @@ function ProviderForm<T extends CreateProviderInput | UpdateProviderInput>({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="format">Format</Label>
+          <Label htmlFor="format">{t("format")}</Label>
           <Select
             value={data.format ?? "anthropic"}
             onValueChange={(value: ProviderFormat) => onChange({ ...data, format: value })}
@@ -614,7 +613,7 @@ function ProviderForm<T extends CreateProviderInput | UpdateProviderInput>({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="base_url">Base URL</Label>
+        <Label htmlFor="base_url">{t("baseUrl")}</Label>
         <Input
           id="base_url"
           placeholder="e.g. https://api.example.com"
@@ -627,11 +626,11 @@ function ProviderForm<T extends CreateProviderInput | UpdateProviderInput>({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="api_key">API Key {isEdit && <span className="text-muted-foreground">(leave empty to keep current)</span>}</Label>
+        <Label htmlFor="api_key">{t("apiKey")} {isEdit && <span className="text-muted-foreground">({t("leaveEmptyKeepCurrent")})</span>}</Label>
         <Input
           id="api_key"
           type="password"
-          placeholder={isEdit ? "Enter new key to change" : "sk-... or other key"}
+          placeholder={isEdit ? t("updateApiKey") : "sk-..."}
           value={data.api_key ?? ""}
           onChange={(e) => {
             onErrorChange(null);
@@ -650,7 +649,7 @@ function ProviderForm<T extends CreateProviderInput | UpdateProviderInput>({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="patterns">Model Patterns</Label>
+        <Label htmlFor="patterns">{t("modelPatterns")}</Label>
         <Input
           id="patterns"
           placeholder="e.g. glm-5, glm-* (comma-separated)"
@@ -661,12 +660,12 @@ function ProviderForm<T extends CreateProviderInput | UpdateProviderInput>({
           }}
         />
         <p className="text-xs text-muted-foreground">
-          Exact patterns (e.g. glm-5) match before glob patterns (e.g. glm-*). Globs serve as fallbacks.
+          {t("exactPatternHelp")}
         </p>
       </div>
 
       <div className="flex items-center justify-between">
-        <Label htmlFor="enabled">Enabled</Label>
+        <Label htmlFor="enabled">{t("enabled")}</Label>
         <Switch
           id="enabled"
           checked={data.is_enabled ?? true}
@@ -677,9 +676,9 @@ function ProviderForm<T extends CreateProviderInput | UpdateProviderInput>({
       {data.format === "anthropic" && (
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
-            <Label htmlFor="strict_passthrough">Strict Protocol Passthrough</Label>
+            <Label htmlFor="strict_passthrough">{t("strictProtocolPassthrough")}</Label>
             <p className="text-xs text-muted-foreground">
-              Preserve native Anthropic fields such as thinking and context management.
+              {t("strictProtocolHelp")}
             </p>
           </div>
           <Switch
@@ -692,9 +691,9 @@ function ProviderForm<T extends CreateProviderInput | UpdateProviderInput>({
 
       <div className="flex items-center justify-between">
         <div className="space-y-0.5">
-          <Label htmlFor="supports_reasoning">Supports Reasoning</Label>
+          <Label htmlFor="supports_reasoning">{t("supportsReasoning")}</Label>
           <p className="text-xs text-muted-foreground">
-            Enable for o1/o3-style models that accept reasoning_effort parameter
+            {t("supportsReasoningHelp")}
           </p>
         </div>
         <Switch
@@ -714,33 +713,34 @@ function ProviderForm<T extends CreateProviderInput | UpdateProviderInput>({
 function validateFormData(
   data: CreateProviderInput | UpdateProviderInput,
   isEdit = false,
+  t: (key: "nameRequired" | "nameTooLong" | "baseUrlRequired" | "baseUrlInvalid" | "apiKeyRequired" | "formatInvalid" | "modelPatternRequired" | "modelPatternEmpty") => string,
 ): string | null {
   if (!data.name?.trim()) {
-    return "Name is required";
+    return t("nameRequired");
   }
   if (data.name && data.name.length > 100) {
-    return "Name must be 100 characters or less";
+    return t("nameTooLong");
   }
   if (!data.base_url?.trim()) {
-    return "Base URL is required";
+    return t("baseUrlRequired");
   }
   try {
     new URL(data.base_url);
   } catch {
-    return "Base URL must be a valid URL";
+    return t("baseUrlInvalid");
   }
   if (!isEdit && !data.api_key?.trim()) {
-    return "API Key is required";
+    return t("apiKeyRequired");
   }
   if (!data.format || (data.format !== "anthropic" && data.format !== "openai")) {
-    return "Format must be anthropic or openai";
+    return t("formatInvalid");
   }
   if (!data.model_patterns || data.model_patterns.length === 0) {
-    return "At least one model pattern is required";
+    return t("modelPatternRequired");
   }
   for (const pattern of data.model_patterns) {
     if (!pattern.trim()) {
-      return "Model patterns cannot be empty";
+      return t("modelPatternEmpty");
     }
   }
   return null;
