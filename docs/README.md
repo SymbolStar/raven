@@ -24,6 +24,7 @@
 | 23 | [Token Sentinel](./23-token-sentinel.md) | Copilot token 单写者刷新架构：哨兵 loop + 信号通道，天然线程安全 |
 | 24 | [CarHer Responses Gateway](./24-carher-responses-gateway.md) | CarHer OpenAI Responses 透明转发与本地网关配置 |
 | 25 | [CarHer + Raven + Pi Runbook](./25-carher-raven-pi-runbook.md) | 本地网关改造、启动、Dashboard、Pi 实验与排障手册 |
+| 26 | [Raven CLI 快速启动](./26-raven-cli-quickstart.md) | 一条命令启动 Proxy 与 Dashboard，并自动管理本地密钥 |
 
 ## Archive
 
