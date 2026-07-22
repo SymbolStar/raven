@@ -1,17 +1,16 @@
 import { Suspense } from "react";
-import { Boxes, Activity, Zap, AlertTriangle } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
-import { StatCard } from "@/components/stats/stat-card";
 import { FetchError } from "@/components/fetch-error";
 import { FilterBar } from "@/components/analytics/filter-bar";
 import { safeFetch } from "@/lib/proxy";
-import { formatCompact, formatPercent } from "@/lib/chart-config";
 import type { BreakdownEntry } from "@/lib/types";
 import {
   searchParamsToFilters,
   filtersToApiQuery,
 } from "@/lib/analytics-filters";
 import { ModelExplorer } from "./model-explorer";
+import { AnalyticsPageHeader } from "../analytics-page-header";
+import { ModelsStats } from "./models-stats";
 
 export const metadata = { title: "Models" };
 
@@ -39,10 +38,7 @@ export default async function ModelsPage({ searchParams }: PageProps) {
     return (
       <AppShell breadcrumbs={[{ label: "Models" }]}>
         <div className="space-y-4 md:space-y-6">
-          <div className="flex flex-col gap-1">
-            <h1 className="text-display">Model Explorer</h1>
-            <p className="text-meta">Per-model traffic, latency, error rate and token usage.</p>
-          </div>
+          <AnalyticsPageHeader title="modelExplorer" description="modelExplorerDescription" />
           <FetchError title="Failed to load model stats" message={result.error} />
         </div>
       </AppShell>
@@ -64,24 +60,11 @@ export default async function ModelsPage({ searchParams }: PageProps) {
   return (
     <AppShell breadcrumbs={[{ label: "Models" }]}>
       <div className="space-y-4 md:space-y-6">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-display">Model Explorer</h1>
-          <p className="text-meta">Per-model traffic, latency, error rate and token usage.</p>
-        </div>
+        <AnalyticsPageHeader title="modelExplorer" description="modelExplorerDescription" />
         <Suspense>
           <FilterBar models={models} compact />
         </Suspense>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
-          <StatCard icon={Boxes} label="Total Models" value={formatCompact(totalModels)} />
-          <StatCard icon={Activity} label="Total Requests" value={formatCompact(totalRequests)} />
-          <StatCard icon={Zap} label="Total Tokens" value={formatCompact(totalTokens)} />
-          <StatCard
-            icon={AlertTriangle}
-            label="Avg Error Rate"
-            value={formatPercent(avgErrorRate)}
-            accent={avgErrorRate > 0.1 ? "danger" : avgErrorRate > 0.05 ? "warning" : "default"}
-          />
-        </div>
+        <ModelsStats models={totalModels} requests={totalRequests} tokens={totalTokens} errorRate={avgErrorRate} />
         <ModelExplorer data={result.data} currentSort={sort} currentOrder={order} />
       </div>
     </AppShell>

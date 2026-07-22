@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatCompact, formatLatency, formatPercent } from "@/lib/chart-config";
 import type { BreakdownEntry } from "@/lib/types";
+import { useLocale } from "@/components/locale-provider";
+import type { MessageKey } from "@/lib/locale";
 
 interface ModelExplorerProps {
   data: BreakdownEntry[];
@@ -15,27 +17,15 @@ interface ModelExplorerProps {
 }
 
 const COLUMNS = [
-  { key: "key", label: "Model", sortable: false },
-  { key: "count", label: "Requests", sortable: true },
-  { key: "total_tokens", label: "Total Tokens", sortable: true },
-  { key: "input_tokens", label: "Input", sortable: true },
-  { key: "output_tokens", label: "Output", sortable: true },
-  { key: "avg_latency_ms", label: "Avg Latency", sortable: true },
-  { key: "p95_latency_ms", label: "P95 Latency", sortable: true },
-  { key: "avg_ttft_ms", label: "Avg TTFT", sortable: true },
-  { key: "error_rate", label: "Error Rate", sortable: true },
-  { key: "last_seen", label: "Last Seen", sortable: true },
-] as const;
+  { key: "key", label: "model", sortable: false }, { key: "count", label: "requests", sortable: true }, { key: "total_tokens", label: "totalTokens", sortable: true }, { key: "input_tokens", label: "input", sortable: true }, { key: "output_tokens", label: "output", sortable: true }, { key: "avg_latency_ms", label: "averageLatency", sortable: true }, { key: "p95_latency_ms", label: "p95Latency", sortable: true }, { key: "avg_ttft_ms", label: "averageTtft", sortable: true }, { key: "error_rate", label: "errorRate", sortable: true }, { key: "last_seen", label: "lastSeen", sortable: true },
+] as const satisfies ReadonlyArray<{ key: string; label: MessageKey; sortable: boolean }>;
 
-function formatRelativeTime(epoch: number): string {
+function formatRelativeTime(epoch: number, t: (key: "justNow" | "minutesAgo" | "hoursAgo" | "daysAgo") => string): string {
   const diff = Date.now() - epoch;
-  if (diff < 60000) return "just now";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  return `${Math.floor(diff / 86400000)}d ago`;
+  if (diff < 60000) return t("justNow"); if (diff < 3600000) return `${Math.floor(diff / 60000)}${t("minutesAgo")}`; if (diff < 86400000) return `${Math.floor(diff / 3600000)}${t("hoursAgo")}`; return `${Math.floor(diff / 86400000)}${t("daysAgo")}`;
 }
 
-function formatCellValue(entry: BreakdownEntry, key: string): string {
+function formatCellValue(entry: BreakdownEntry, key: string, t: (key: "justNow" | "minutesAgo" | "hoursAgo" | "daysAgo") => string): string {
   switch (key) {
     case "key":
       return entry.key || "(unknown)";
@@ -56,13 +46,14 @@ function formatCellValue(entry: BreakdownEntry, key: string): string {
     case "error_rate":
       return formatPercent(entry.error_rate);
     case "last_seen":
-      return formatRelativeTime(entry.last_seen);
+      return formatRelativeTime(entry.last_seen, t);
     default:
       return "";
   }
 }
 
 export function ModelExplorer({ data, currentSort, currentOrder }: ModelExplorerProps) {
+  const { t } = useLocale();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -99,7 +90,7 @@ export function ModelExplorer({ data, currentSort, currentOrder }: ModelExplorer
                       className="gap-1 -ml-1.5"
                       onClick={() => toggleSort(col.key)}
                     >
-                      {col.label}
+                      {t(col.label)}
                       {currentSort === col.key ? (
                         currentOrder === "desc" ? (
                           <ArrowDown className="size-3" />
@@ -111,7 +102,7 @@ export function ModelExplorer({ data, currentSort, currentOrder }: ModelExplorer
                       )}
                     </Button>
                   ) : (
-                    col.label
+                    t(col.label)
                   )}
                 </th>
               ))}
@@ -129,16 +120,16 @@ export function ModelExplorer({ data, currentSort, currentOrder }: ModelExplorer
                     className="px-3 py-2.5 whitespace-nowrap tabular-nums"
                   >
                     {col.key === "key" ? (
-                      <span className="font-medium text-foreground">{entry.key || "(unknown)"}</span>
+                      <span className="font-medium text-foreground">{entry.key || t("unknown")}</span>
                     ) : col.key === "error_rate" ? (
                       <Badge
                         variant={entry.error_rate > 0.1 ? "destructive" : entry.error_rate > 0.05 ? "warning" : "secondary"}
                         className="text-[10px] px-1.5"
                       >
-                        {formatCellValue(entry, col.key)}
+                        {formatCellValue(entry, col.key, t)}
                       </Badge>
                     ) : (
-                      <span className="text-muted-foreground">{formatCellValue(entry, col.key)}</span>
+                      <span className="text-muted-foreground">{formatCellValue(entry, col.key, t)}</span>
                     )}
                   </td>
                 ))}
@@ -147,7 +138,7 @@ export function ModelExplorer({ data, currentSort, currentOrder }: ModelExplorer
             {data.length === 0 && (
               <tr>
                 <td colSpan={COLUMNS.length} className="px-3 py-8 text-center text-muted-foreground">
-                  No model data found for the selected time range
+                  {t("noModelData")}
                 </td>
               </tr>
             )}
