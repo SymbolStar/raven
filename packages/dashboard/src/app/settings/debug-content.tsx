@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label"
 import { Loader2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
+import { useLocale } from "@/components/locale-provider"
 
 interface DebugInfo {
   enabled: boolean
@@ -15,22 +16,14 @@ interface DebugContentProps {
   data: Record<string, DebugInfo>
 }
 
-const DEBUG_ITEMS = [
-  {
-    id: "tool_call_debug",
-    label: "Tool Call Debug",
-    description:
-      "Emit debug-level events for tool call processing (definitions, invocations, stop reasons). View in Logs page with debug filter enabled.",
-  },
-]
-
 export function DebugContent({ data }: DebugContentProps) {
+  const { t } = useLocale()
   const info = data.tool_call_debug
 
   if (!info) {
     return (
       <p className="text-sm text-muted-foreground">
-        Debug settings not available
+        {t("debugNotAvailable")}
       </p>
     )
   }
@@ -39,6 +32,7 @@ export function DebugContent({ data }: DebugContentProps) {
 }
 
 function DebugContentBody({ info }: { info: DebugInfo }) {
+  const { t } = useLocale()
   const router = useRouter()
   const key = info.key
   const [enabled, setEnabled] = useState(info.enabled)
@@ -74,10 +68,10 @@ function DebugContentBody({ info }: { info: DebugInfo }) {
   return (
     <section>
       <h2 className="text-sm font-medium text-muted-foreground mb-3">
-        Debugging
+        {t("debugging")}
       </h2>
       <div className="grid gap-3">
-        {DEBUG_ITEMS.map((item) => (
+        {[{ id: "tool_call_debug" }].map((item) => (
           <div
             key={item.id}
             className="rounded-card bg-secondary p-4"
@@ -88,9 +82,9 @@ function DebugContentBody({ info }: { info: DebugInfo }) {
                   htmlFor={`debug-${item.id}`}
                   className="text-sm font-medium cursor-pointer"
                 >
-                  {item.label}
+                  {t("toolCallDebug")}
                 </Label>
-                <p className="text-xs text-muted-foreground mt-0.5">{item.description}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{t("toolCallDebugDescription")}</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {saving && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
