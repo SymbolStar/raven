@@ -1,12 +1,11 @@
-import { Shield, Sparkles, Wrench, Globe } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { FetchError } from "@/components/fetch-error";
-import { StatCard } from "@/components/stats/stat-card";
 import { safeFetch } from "@/lib/proxy";
 import type { SettingsData } from "@/lib/types";
 import { OptimizationsContent } from "./optimizations-content";
 import { IPWhitelistContent } from "./ip-whitelist-content";
 import { CorsContent } from "./cors-content";
+import { SettingsHeader, SettingsOverview } from "./settings-overview";
 
 export const metadata = { title: "Settings" };
 
@@ -30,40 +29,13 @@ export default async function SettingsPage() {
   return (
     <AppShell breadcrumbs={[{ label: "Settings" }]}>
       <div className="space-y-4 md:space-y-6">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-display">Settings</h1>
-          <p className="text-meta">Server status, IP whitelist, CORS and request optimizations.</p>
-        </div>
-
-        {/* Status overview tiles */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-          <StatCard
-            icon={Shield}
-            label="IP Whitelist"
-            value={data.ip_whitelist.enabled ? "On" : "Off"}
-            detail={`${data.ip_whitelist.ranges.length} range${data.ip_whitelist.ranges.length === 1 ? "" : "s"}`}
-            accent={data.ip_whitelist.enabled ? "success" : "default"}
-          />
-          <StatCard
-            icon={Globe}
-            label="CORS"
-            value={data.cors.enabled ? "On" : "Off"}
-            detail={`${data.cors.allowed_origins.length} origin${data.cors.allowed_origins.length === 1 ? "" : "s"}`}
-            accent={data.cors.enabled ? "success" : "default"}
-          />
-          <StatCard
-            icon={Sparkles}
-            label="Optimizations"
-            value={`${optEnabled} / ${optTotal}`}
-            detail="enabled"
-          />
-          <StatCard
-            icon={Wrench}
-            label="Server Tools"
-            value={`${stEnabled} / ${stTotal}`}
-            detail="enabled"
-          />
-        </div>
+        <SettingsHeader />
+        <SettingsOverview
+          ipWhitelist={data.ip_whitelist}
+          cors={data.cors}
+          optimizations={{ enabled: optEnabled, total: optTotal }}
+          serverTools={{ enabled: stEnabled, total: stTotal }}
+        />
 
         <IPWhitelistContent data={data.ip_whitelist} />
         <CorsContent data={data.cors} />
