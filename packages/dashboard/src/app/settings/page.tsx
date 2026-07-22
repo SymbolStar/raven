@@ -4,7 +4,6 @@ import { FetchError } from "@/components/fetch-error";
 import { StatCard } from "@/components/stats/stat-card";
 import { safeFetch } from "@/lib/proxy";
 import type { SettingsData } from "@/lib/types";
-import { SettingsContent } from "./settings-content";
 import { OptimizationsContent } from "./optimizations-content";
 import { IPWhitelistContent } from "./ip-whitelist-content";
 import { CorsContent } from "./cors-content";
@@ -66,7 +65,6 @@ export default async function SettingsPage() {
           />
         </div>
 
-        <SettingsContent data={data} />
         <IPWhitelistContent data={data.ip_whitelist} />
         <CorsContent data={data.cors} />
         <OptimizationsContent data={data.optimizations} />
