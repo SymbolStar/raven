@@ -186,7 +186,7 @@ describe("pickStrategy — branch coverage assertions", () => {
     }
   })
 
-  test("responses client × custom provider rejects with 400 invalid_request_error", () => {
+  test("responses client × OpenAI custom provider selects transparent custom-responses", () => {
     const decision = pickStrategy({
       protocol: "responses",
       model: "gpt-5.2",
@@ -202,11 +202,16 @@ describe("pickStrategy — branch coverage assertions", () => {
       ],
       modelsCatalogIds: [],
     })
+    expect(decision).toEqual({ kind: "ok", name: "custom-responses", providerId: "custom-1" })
+  })
+
+  test("responses client × Anthropic custom provider rejects with a protocol-specific error", () => {
+    const decision = pickStrategy({
+      protocol: "responses", model: "claude-sonnet-5",
+      providers: [compileProvider({ id: "anthropic-up", name: "anthropic-up", format: "anthropic", enabled: true, supports_reasoning: false, patterns: ["claude-sonnet-5"] })],
+      modelsCatalogIds: [],
+    })
     expect(decision.kind).toBe("reject")
-    if (decision.kind === "reject") {
-      expect(decision.status).toBe(400)
-      expect(decision.errorType).toBe("invalid_request_error")
-      expect(decision.message).toContain("custom upstreams")
-    }
+    if (decision.kind === "reject") expect(decision.message).toContain("Anthropic-format upstreams")
   })
 })

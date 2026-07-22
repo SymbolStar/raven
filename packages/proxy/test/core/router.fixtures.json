@@ -276,7 +276,7 @@
       "expected": { "kind": "ok", "name": "copilot-responses" }
     },
     {
-      "name": "responses / model with custom provider → reject 400 (F.8)",
+      "name": "responses / model with OpenAI custom provider → custom-responses",
       "input": {
         "protocol": "responses",
         "model": "custom-reasoning-a",
@@ -293,12 +293,7 @@
         ],
         "modelsCatalogIds": []
       },
-      "expected": {
-        "kind": "reject",
-        "status": 400,
-        "errorType": "invalid_request_error",
-        "message": "OpenAI Responses API cannot be routed to custom upstreams."
-      }
+      "expected": { "kind": "ok", "name": "custom-responses", "providerId": "prov-a" }
     },
     {
       "name": "anthropic / glob beats nothing (gpt-5.2 via gpt-5.* glob) → custom-openai",

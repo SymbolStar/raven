@@ -436,6 +436,7 @@ cp packages/dashboard/.env.example packages/dashboard/.env.local
 | `RAVEN_DB_PATH` | `$RAVEN_DATA_DIR/raven.db` | SQLite 数据库路径（覆盖） |
 | `RAVEN_LOG_LEVEL` | `info` | 最低日志级别：`debug` / `info` / `warn` / `error` |
 | `RAVEN_BASE_URL` | _(空)_ | 公开 base URL，空 = `http://localhost:$RAVEN_PORT` |
+| `RAVEN_DISABLE_COPILOT` | `true` | `false` 时启用 GitHub Copilot；默认仅运行自定义上游 |
 
 #### Dashboard (`packages/dashboard`)
 

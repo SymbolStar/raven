@@ -30,6 +30,7 @@ const createProviderSchema = z.object({
   model_patterns: z.array(z.string()).min(1),
   is_enabled: z.boolean().optional().default(true),
   supports_reasoning: z.boolean().optional().default(false),
+  strict_passthrough: z.boolean().optional().default(false),
   auth_style: z.enum(["bearer", "x-api-key"]).nullable().optional(),
 })
 
@@ -41,6 +42,7 @@ const updateProviderSchema = z.object({
   model_patterns: z.array(z.string()).min(1).optional(),
   is_enabled: z.boolean().optional(),
   supports_reasoning: z.boolean().optional(),
+  strict_passthrough: z.boolean().optional(),
   auth_style: z.enum(["bearer", "x-api-key"]).nullable().optional(),
 })
 
@@ -109,6 +111,10 @@ function checkModelConflicts(
   }
 
   return conflicts
+}
+
+function copilotConflictCatalogRequired(): boolean {
+  return process.env.RAVEN_DISABLE_COPILOT === "false"
 }
 
 /**
@@ -222,7 +228,7 @@ export function createUpstreamsRoute(db: Database): Hono {
   // POST /upstreams — create provider
   app.post("/upstreams", async (c) => {
     // Block if Copilot models aren't loaded (conflict detection would be incomplete)
-    if (!state.models?.data) {
+    if (copilotConflictCatalogRequired() && !state.models?.data) {
       return c.json(
         {
           error: {
@@ -297,7 +303,7 @@ export function createUpstreamsRoute(db: Database): Hono {
     }
 
     // Block if updating model_patterns and Copilot models aren't loaded
-    if (input.model_patterns !== undefined && !state.models?.data) {
+    if (input.model_patterns !== undefined && copilotConflictCatalogRequired() && !state.models?.data) {
       return c.json(
         {
           error: {

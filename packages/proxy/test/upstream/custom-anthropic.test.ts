@@ -218,6 +218,25 @@ describe("CustomAnthropicClient (E.8)", () => {
     expect(body.model).toBe("mimo-v2.5-pro")
   })
 
+  test("strict passthrough preserves native Anthropic request fields", async () => {
+    const provider = makeProvider({
+      id: "p", name: "carher", base_url: "https://cc.auto-link.com.cn/pro", api_key: "sk",
+      strict_passthrough: 1,
+    })
+    const payload = {
+      model: "anthropic.claude-sonnet-5",
+      messages: [],
+      max_tokens: 1,
+      context_management: { type: "ephemeral" },
+      output_config: { effort: "high", verbosity: "medium" },
+      tools: null,
+      tool_choice: null,
+    } as unknown as AnthropicMessagesPayload
+    const client = createDefaultCustomAnthropicClient()
+    await client.send({ provider, payload })
+    expect(captured[0]!.body).toEqual(payload)
+  })
+
   test("auth_style=bearer sends only Authorization header", async () => {
     const provider = makeProvider({
       id: "p", name: "manifest", base_url: "https://manifest.example", api_key: "mnfst_x",

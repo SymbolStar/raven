@@ -253,6 +253,7 @@ export interface ConnectionInfo {
   endpoints: {
     chat_completions: string;
     messages: string;
+    responses: string;
     models: string;
     embeddings: string;
   };
@@ -316,6 +317,7 @@ export interface ProviderPublic {
   model_patterns: string[];
   is_enabled: boolean;
   supports_reasoning: boolean;
+  strict_passthrough: boolean;
   supports_models_endpoint: boolean | null;
   created_at: number;
   updated_at: number;
@@ -329,6 +331,7 @@ export interface CreateProviderInput {
   model_patterns: string[];
   is_enabled?: boolean;
   supports_reasoning?: boolean;
+  strict_passthrough?: boolean;
 }
 
 export interface UpdateProviderInput {
@@ -339,6 +342,7 @@ export interface UpdateProviderInput {
   model_patterns?: string[];
   is_enabled?: boolean;
   supports_reasoning?: boolean;
+  strict_passthrough?: boolean;
 }
 
 // ---------------------------------------------------------------------------

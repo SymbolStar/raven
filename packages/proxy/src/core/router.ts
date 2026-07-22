@@ -15,6 +15,7 @@ export type StrategyName =
   | "copilot-translated"
   | "copilot-openai-direct"
   | "copilot-responses"
+  | "custom-responses"
   | "custom-openai"
   | "custom-anthropic"
 
@@ -49,11 +50,11 @@ const REJECT_OPENAI_TO_ANTHROPIC: StrategyDecision = {
     "OpenAI client requests cannot be routed to Anthropic-format upstreams. Use the Anthropic Messages API instead.",
 }
 
-const REJECT_RESPONSES_TO_CUSTOM: StrategyDecision = {
+const REJECT_RESPONSES_TO_ANTHROPIC: StrategyDecision = {
   kind: "reject",
   status: 400,
   errorType: "invalid_request_error",
-  message: "OpenAI Responses API cannot be routed to custom upstreams.",
+  message: "OpenAI Responses API cannot be routed to Anthropic-format upstreams. Use the Anthropic Messages API instead.",
 }
 
 interface ProviderMatch {
@@ -138,7 +139,8 @@ export function pickStrategy(input: RouterInput): StrategyDecision {
   // protocol === "responses"
   const matched = matchProvider([model], providers)
   if (matched) {
-    return REJECT_RESPONSES_TO_CUSTOM
+    if (matched.provider.format === "anthropic") return REJECT_RESPONSES_TO_ANTHROPIC
+    return { kind: "ok", name: "custom-responses", providerId: matched.provider.id }
   }
   return { kind: "ok", name: "copilot-responses" }
 }

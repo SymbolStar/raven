@@ -132,6 +132,7 @@ export function createConnectionInfoRoute(
       endpoints: {
         chat_completions: "/v1/chat/completions",
         messages: "/v1/messages",
+        responses: "/v1/responses",
         models: "/v1/models",
         embeddings: "/v1/embeddings",
       },

@@ -95,6 +95,7 @@ function EndpointsSection({ info }: { info: ConnectionInfo }) {
   const endpoints = [
     { label: "Base URL", value: info.base_url },
     { label: "Chat Completions", value: `${info.base_url}${info.endpoints.chat_completions}` },
+    { label: "OpenAI Responses", value: `${info.base_url}${info.endpoints.responses}` },
     { label: "Anthropic Messages", value: `${info.base_url}${info.endpoints.messages}` },
     { label: "Models", value: `${info.base_url}${info.endpoints.models}` },
     { label: "Embeddings", value: `${info.base_url}${info.endpoints.embeddings}` },

@@ -91,24 +91,29 @@ if (state.socks5Enabled) {
   }
 }
 
-// 4. GitHub OAuth (loads from disk or runs device flow)
-await setupGitHubToken()
-const githubToken = state.githubToken!
-logger.info("GitHub token loaded")
+let githubToken = ""
+if (config.disableCopilot) {
+  logger.info("Copilot integration disabled; custom upstream providers remain available")
+} else {
+  // 4. GitHub OAuth (loads from disk or runs device flow)
+  await setupGitHubToken()
+  githubToken = state.githubToken!
+  logger.info("GitHub token loaded")
 
-// 5. Copilot JWT (initial fetch + auto-refresh via setInterval)
-await setupCopilotToken()
-logger.info("Copilot JWT acquired, auto-refresh started")
+  // 5. Copilot JWT (initial fetch + auto-refresh via setInterval)
+  await setupCopilotToken()
+  logger.info("Copilot JWT acquired, auto-refresh started")
 
-// 6. Cache models
-try {
-  await cacheModels()
-  const modelCount = state.models?.data?.length ?? 0
-  logger.info(`Cached ${modelCount} models from Copilot API`)
-} catch (err) {
-  logger.warn("Failed to cache models, will retry on first request", {
-    error: err instanceof Error ? err.message : String(err),
-  })
+  // 6. Cache models
+  try {
+    await cacheModels()
+    const modelCount = state.models?.data?.length ?? 0
+    logger.info(`Cached ${modelCount} models from Copilot API`)
+  } catch (err) {
+    logger.warn("Failed to cache models, will retry on first request", {
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
 }
 
 // 7. Build app with all dependencies wired

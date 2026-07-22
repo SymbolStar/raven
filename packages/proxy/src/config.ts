@@ -8,6 +8,7 @@ export interface Config {
   dbPath: string;
   logLevel: "debug" | "info" | "warn" | "error";
   baseUrl: string;
+  disableCopilot: boolean;
 }
 
 export function loadConfig(): Config {
@@ -18,6 +19,9 @@ export function loadConfig(): Config {
   const dbPath = getDefaultDbPath();
   const logLevel = (process.env.RAVEN_LOG_LEVEL ?? "info") as Config["logLevel"];
   const baseUrl = process.env.RAVEN_BASE_URL ?? "";
+  // Custom upstreams are the default. Set RAVEN_DISABLE_COPILOT=false to opt
+  // into GitHub Copilot initialization and its associated OAuth flow.
+  const disableCopilot = process.env.RAVEN_DISABLE_COPILOT !== "false";
 
-  return { port, apiKey, internalKey, tokenPath, dbPath, logLevel, baseUrl };
+  return { port, apiKey, internalKey, tokenPath, dbPath, logLevel, baseUrl, disableCopilot };
 }
