@@ -58,7 +58,7 @@ function DetailRow({ label, value, mono }: { label: string; value: React.ReactNo
 }
 
 export function RequestDetailDrawer({ request, open, onOpenChange }: RequestDetailDrawerProps) {
-  const { locale } = useLocale();
+  const { locale, t } = useLocale();
   if (!request) return null;
 
   const totalLatency = request.latency_ms;
@@ -76,7 +76,7 @@ export function RequestDetailDrawer({ request, open, onOpenChange }: RequestDeta
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <Badge variant={request.status === "success" ? "success" : "destructive"}>
-              {request.status}
+              {request.status === "success" ? t("success") : t("failure")}
             </Badge>
             <span className="font-mono text-sm truncate">{request.model}</span>
           </SheetTitle>
@@ -95,7 +95,7 @@ export function RequestDetailDrawer({ request, open, onOpenChange }: RequestDeta
               variant="ghost"
               size="xs"
               onClick={() => copyToClipboard(request.id)}
-              aria-label="Copy request ID"
+              aria-label={t("copyRequestId")}
             >
               <Copy className="size-3" />
             </Button>
@@ -103,7 +103,7 @@ export function RequestDetailDrawer({ request, open, onOpenChange }: RequestDeta
 
           {/* Timing Breakdown */}
           <section>
-            <h4 className="text-xs font-medium text-foreground mb-2">Timing</h4>
+            <h4 className="text-xs font-medium text-foreground mb-2">{t("timing")}</h4>
             <div className="space-y-1">
               {/* Visual waterfall bar */}
               <div className="h-6 flex rounded overflow-hidden bg-muted text-[10px]">
@@ -120,52 +120,52 @@ export function RequestDetailDrawer({ request, open, onOpenChange }: RequestDeta
                   <div
                     className="bg-chart-3 flex items-center justify-center text-white"
                     style={{ width: `${procPct}%` }}
-                    title={`Processing: ${formatLatency(processing)}`}
+                    title={`${t("processing")}: ${formatLatency(processing)}`}
                   >
-                    {procPct > 15 && "Proc"}
+                    {procPct > 15 && t("processing")}
                   </div>
                 )}
                 <div
                   className="bg-chart-1 flex items-center justify-center text-white flex-1"
-                  title={`Total: ${formatLatency(totalLatency)}`}
+                  title={`${t("total")}: ${formatLatency(totalLatency)}`}
                 >
                   {formatLatency(totalLatency)}
                 </div>
               </div>
-              <DetailRow label="Total Latency" value={formatLatency(totalLatency)} mono />
+              <DetailRow label={t("totalLatency")} value={formatLatency(totalLatency)} mono />
               {ttft != null && <DetailRow label="TTFT" value={formatLatency(ttft)} mono />}
-              {processing != null && <DetailRow label="Processing" value={formatLatency(processing)} mono />}
+              {processing != null && <DetailRow label={t("processing")} value={formatLatency(processing)} mono />}
             </div>
           </section>
 
           {/* Request Details */}
           <section>
-            <h4 className="text-xs font-medium text-foreground mb-2">Request</h4>
-            <DetailRow label="Path" value={request.path} mono />
-            <DetailRow label="Model" value={request.model} mono />
-            <DetailRow label="Resolved Model" value={request.resolved_model} mono />
-            <DetailRow label="Translated Model" value={request.translated_model || null} mono />
-            <DetailRow label="Format" value={request.client_format} />
-            <DetailRow label="Stream" value={request.stream ? "Yes" : "No"} />
-            <DetailRow label="Status Code" value={request.status_code} mono />
-            <DetailRow label="Upstream Status" value={request.upstream_status} mono />
+            <h4 className="text-xs font-medium text-foreground mb-2">{t("request")}</h4>
+            <DetailRow label={t("path")} value={request.path} mono />
+            <DetailRow label={t("models")} value={request.model} mono />
+            <DetailRow label={t("resolvedModel")} value={request.resolved_model} mono />
+            <DetailRow label={t("translatedModel")} value={request.translated_model || null} mono />
+            <DetailRow label={t("format")} value={request.client_format} />
+            <DetailRow label={t("stream")} value={request.stream ? t("yes") : t("no")} />
+            <DetailRow label={t("statusCode")} value={request.status_code} mono />
+            <DetailRow label={t("upstreamStatus")} value={request.upstream_status} mono />
           </section>
 
           {/* Tokens */}
           <section>
-            <h4 className="text-xs font-medium text-foreground mb-2">Tokens</h4>
+            <h4 className="text-xs font-medium text-foreground mb-2">{t("totalTokens")}</h4>
             <DetailRow
-              label="Input"
+              label={t("input")}
               value={request.input_tokens != null ? request.input_tokens.toLocaleString() : "—"}
               mono
             />
             <DetailRow
-              label="Output"
+              label={t("output")}
               value={request.output_tokens != null ? request.output_tokens.toLocaleString() : "—"}
               mono
             />
             <DetailRow
-              label="Total"
+              label={t("total")}
               value={
                 request.input_tokens != null && request.output_tokens != null
                   ? (request.input_tokens + request.output_tokens).toLocaleString()
@@ -177,44 +177,44 @@ export function RequestDetailDrawer({ request, open, onOpenChange }: RequestDeta
 
           {/* Routing */}
           <section>
-            <h4 className="text-xs font-medium text-foreground mb-2">Routing</h4>
-            <DetailRow label="Strategy" value={request.strategy || null} />
-            <DetailRow label="Upstream" value={request.upstream || null} />
-            <DetailRow label="Upstream Format" value={request.upstream_format || null} />
-            <DetailRow label="Routing Path" value={request.routing_path || null} />
-            <DetailRow label="Copilot Model" value={request.copilot_model || null} mono />
+            <h4 className="text-xs font-medium text-foreground mb-2">{t("routing")}</h4>
+            <DetailRow label={t("strategy")} value={request.strategy || null} />
+            <DetailRow label={t("upstream")} value={request.upstream || null} />
+            <DetailRow label={t("upstreamFormat")} value={request.upstream_format || null} />
+            <DetailRow label={t("routingPath")} value={request.routing_path || null} />
+            <DetailRow label={t("copilotModel")} value={request.copilot_model || null} mono />
           </section>
 
           {/* Client Context */}
           <section>
-            <h4 className="text-xs font-medium text-foreground mb-2">Client</h4>
-            <DetailRow label="Account" value={request.account_name || null} />
-            <DetailRow label="Client" value={request.client_name || null} />
-            <DetailRow label="Version" value={request.client_version} />
+            <h4 className="text-xs font-medium text-foreground mb-2">{t("client")}</h4>
+            <DetailRow label={t("account")} value={request.account_name || null} />
+            <DetailRow label={t("client")} value={request.client_name || null} />
+            <DetailRow label={t("version")} value={request.client_version} />
             {request.session_id && (
               isJsonLike(request.session_id) ? (
                 <div className="py-1.5">
-                  <div className="text-xs text-muted-foreground mb-1">Session</div>
+                  <div className="text-xs text-muted-foreground mb-1">{t("session")}</div>
                   <JsonBlock value={request.session_id} />
                 </div>
               ) : (
-                <DetailRow label="Session" value={request.session_id} mono />
+                <DetailRow label={t("session")} value={request.session_id} mono />
               )
             )}
           </section>
 
           {/* Response Metadata */}
           <section>
-            <h4 className="text-xs font-medium text-foreground mb-2">Response</h4>
-            <DetailRow label="Stop Reason" value={request.stop_reason || null} />
+            <h4 className="text-xs font-medium text-foreground mb-2">{t("response")}</h4>
+            <DetailRow label={t("stopReason")} value={request.stop_reason || null} />
             <DetailRow
-              label="Tool Calls"
+              label={t("toolCalls")}
               value={request.tool_call_count > 0 ? request.tool_call_count : null}
               mono
             />
             {request.error_message && (
               <div className="mt-2 p-2 rounded bg-destructive/10 border border-destructive/20">
-                <p className="text-xs font-medium text-destructive mb-1">Error</p>
+                <p className="text-xs font-medium text-destructive mb-1">{t("failure")}</p>
                 <p className="text-xs text-destructive/80 font-mono whitespace-pre-wrap break-all">
                   {request.error_message}
                 </p>
@@ -227,7 +227,7 @@ export function RequestDetailDrawer({ request, open, onOpenChange }: RequestDeta
             <Button variant="outline" size="sm" className="w-full" asChild>
               <a href={`/logs?requestId=${request.id}`}>
                 <ExternalLink className="size-3 mr-1.5" />
-                View in Live Logs
+                {t("viewLiveLogs")}
               </a>
             </Button>
           </div>

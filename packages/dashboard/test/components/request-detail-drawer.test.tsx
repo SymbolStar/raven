@@ -2,6 +2,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { translate } from "@/lib/locale";
 
 // ---------------------------------------------------------------------------
 // Polyfills for Radix UI in jsdom
@@ -99,7 +100,7 @@ describe("RequestDetailDrawer", () => {
     );
     // Model appears in title and details section
     expect(screen.getAllByText("claude-sonnet-4").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("success").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Success").length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows request ID with copy button", () => {
@@ -141,7 +142,7 @@ describe("RequestDetailDrawer", () => {
       <RequestDetailDrawer request={req} open={true} onOpenChange={() => {}} />,
     );
     expect(screen.getByText("Rate limit exceeded")).toBeDefined();
-    expect(screen.getByText("Error")).toBeDefined();
+    expect(screen.getAllByText("Error").length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows token breakdown", () => {
@@ -239,7 +240,7 @@ describe("ColumnConfig", () => {
     const user = userEvent.setup();
     await user.click(screen.getByLabelText("Configure columns"));
     for (const col of ALL_COLUMNS) {
-      expect(screen.getByText(col.label)).toBeDefined();
+      expect(screen.getByText(translate("en", col.label))).toBeDefined();
     }
   });
 
