@@ -29,6 +29,7 @@ import type {
   SessionInfo,
 } from "@/components/analytics/panels/types";
 import type { LogEvent } from "@/hooks/use-log-stream";
+import { useLocale } from "@/components/locale-provider";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -397,19 +398,20 @@ function RequestCards({ stats, hasData }: {
   stats: ReturnType<typeof useStats>;
   hasData: boolean;
 }) {
+  const { t } = useLocale();
   return (
     <div className="grid grid-cols-2 gap-2">
       <StatCard
         variant="compact"
         icon={Activity}
-        label="Requests"
+        label={t("requests")}
         value={formatCompact(stats.total)}
-        {...(stats.errors > 0 && { detail: `${stats.errors} failed` })}
+        {...(stats.errors > 0 && { detail: `${stats.errors} ${t("failed")}` })}
       />
       <StatCard
         variant="compact"
         icon={AlertTriangle}
-        label="Error Rate"
+        label={t("errorRate")}
         value={hasData ? formatPercent(stats.errorRate) : "—"}
         accent={
           stats.errorRate > 0.1
@@ -422,9 +424,9 @@ function RequestCards({ stats, hasData }: {
       <StatCard
         variant="compact"
         icon={Zap}
-        label="Avg TTFT"
+        label={t("averageTtft")}
         value={hasData && stats.ttftCount > 0 ? fmtLatency(stats.avgTtft) : "—"}
-        {...(hasData && stats.ttftCount > 0 && { detail: `${stats.ttftCount} streaming` })}
+        {...(hasData && stats.ttftCount > 0 && { detail: `${stats.ttftCount} ${t("streamingCount")}` })}
         accent={
           stats.avgTtft > 5_000
             ? "danger"
@@ -436,7 +438,7 @@ function RequestCards({ stats, hasData }: {
       <StatCard
         variant="compact"
         icon={Timer}
-        label="Avg Duration"
+        label={t("averageDuration")}
         value={hasData ? fmtLatency(stats.avgLatency) : "—"}
         accent={
           stats.avgLatency > 10_000
@@ -454,14 +456,15 @@ function ModelCards({ stats, hasData }: {
   stats: ReturnType<typeof useStats>;
   hasData: boolean;
 }) {
+  const { t } = useLocale();
   return (
     <div className="grid grid-cols-2 gap-2">
       <StatCard
         variant="compact"
         icon={Coins}
-        label="Tokens"
+        label={t("totalTokens")}
         value={hasData ? formatCompact(stats.totalTokens) : "—"}
-        {...(hasData && { detail: `in ${formatCompact(stats.totalInput)} · out ${formatCompact(stats.totalOutput)}` })}
+        {...(hasData && { detail: t("inputOutputTotal").replace("{input}", formatCompact(stats.totalInput)).replace("{output}", formatCompact(stats.totalOutput)).replace("{total}", formatCompact(stats.totalTokens)) })}
       />
     </div>
   );
@@ -474,14 +477,15 @@ function SessionSection({
   sessionTracker: ReturnType<typeof useSessionTracker>;
   concurrencyData: ConcurrencyBucket[];
 }) {
+  const { t } = useLocale();
   return (
     <>
       <StatCard
         variant="compact"
         icon={Users}
-        label="Active Sessions"
+        label={t("activeSessions")}
         value={String(sessionTracker.activeCount)}
-        {...(sessionTracker.activeCount > 0 && { detail: `${sessionTracker.totalActiveRequests} in-flight` })}
+        {...(sessionTracker.activeCount > 0 && { detail: `${sessionTracker.totalActiveRequests} ${t("inFlight")}` })}
         accent={
           sessionTracker.activeCount > 3
             ? "warning"

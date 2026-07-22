@@ -33,6 +33,7 @@ import {
 } from "@/hooks/use-log-stream";
 import { LogsStats } from "./logs-stats";
 import { groupEvents } from "./group-events";
+import { useLocale } from "@/components/locale-provider";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -44,9 +45,9 @@ const LEVELS: LogLevel[] = ["debug", "info", "warn", "error"];
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatTime(ts: number): string {
+function formatTime(ts: number, locale: string): string {
   const d = new Date(ts);
-  return d.toLocaleTimeString("en-US", {
+  return d.toLocaleTimeString(locale, {
     hour12: false,
     hour: "2-digit",
     minute: "2-digit",
@@ -55,12 +56,12 @@ function formatTime(ts: number): string {
   });
 }
 
-function relativeTime(ts: number): string {
+function relativeTime(ts: number, t: (key: "justNow" | "minutesAgo" | "hoursAgo") => string): string {
   const diff = Date.now() - ts;
-  if (diff < 1000) return "just now";
-  if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`;
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  return `${Math.floor(diff / 3_600_000)}h ago`;
+  if (diff < 1000) return t("justNow");
+  if (diff < 60_000) return `${Math.floor(diff / 1000)}s ${t("minutesAgo")}`;
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}${t("minutesAgo")}`;
+  return `${Math.floor(diff / 3_600_000)}${t("hoursAgo")}`;
 }
 
 function formatLatency(ms: number): string {
@@ -161,6 +162,7 @@ function useCopyFeedback() {
 }
 
 function CopyButton({ events }: { events: LogEvent[] }) {
+  const { t } = useLocale();
   const { copied, copy } = useCopyFeedback();
 
   return (
@@ -176,7 +178,7 @@ function CopyButton({ events }: { events: LogEvent[] }) {
           ? "text-success"
           : "text-muted-foreground/40 hover:text-muted-foreground",
       )}
-      title="Copy raw events"
+      title={t("copyRawEvents")}
     >
       {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
     </button>
@@ -188,6 +190,7 @@ function CopyButton({ events }: { events: LogEvent[] }) {
 // ---------------------------------------------------------------------------
 
 function ConnectionIndicator({ connected }: { connected: boolean }) {
+  const { t } = useLocale();
   return (
     <div className="flex items-center gap-1.5 text-xs">
       <Circle
@@ -197,7 +200,7 @@ function ConnectionIndicator({ connected }: { connected: boolean }) {
         )}
       />
       <span className="text-muted-foreground">
-        {connected ? "Connected" : "Reconnecting..."}
+        {connected ? t("connected") : t("reconnecting")}
       </span>
     </div>
   );
@@ -231,6 +234,7 @@ function LevelSelect({
 // ---------------------------------------------------------------------------
 
 function SystemEventCard({ event }: { event: LogEvent }) {
+  const { locale } = useLocale();
   return (
     <div className="flex items-start gap-2">
       <div className="shrink-0 pt-3">
@@ -257,7 +261,7 @@ function SystemEventCard({ event }: { event: LogEvent }) {
             </Badge>
           )}
           <span className="text-muted-foreground tabular-nums">
-            {formatTime(event.ts)}
+            {formatTime(event.ts, locale)}
           </span>
         </div>
         <p className={cn(
@@ -291,6 +295,7 @@ function PhaseDetail({
   events: LogEvent[];
   onClose: () => void;
 }) {
+  const { t } = useLocale();
   const phaseEvents = events.filter((e) => {
     if (phase === "start") return e.type === "request_start";
     if (phase === "error") return e.type === "upstream_error";
@@ -300,7 +305,7 @@ function PhaseDetail({
 
   if (phaseEvents.length === 0) return null;
 
-  const phaseLabel = phase === "start" ? "Request Start" : phase === "error" ? "Upstream Error" : "Request End";
+  const phaseLabel = phase === "start" ? t("requestStart") : phase === "error" ? t("upstreamError") : t("requestEnd");
 
   return (
     <div className="mt-3 rounded-widget border border-border/50 bg-background p-2.5 font-mono text-[11px]">
@@ -309,7 +314,7 @@ function PhaseDetail({
         <button
           type="button"
           onClick={onClose}
-          aria-label="Close phase details"
+          aria-label={t("closePhaseDetails")}
           className="flex items-center justify-center min-h-11 min-w-11 -mr-2 text-muted-foreground hover:text-foreground transition-colors"
         >
           <span className="text-sm">✕</span>
@@ -354,6 +359,7 @@ function RequestCard({
   events: LogEvent[];
   defaultExpanded?: boolean;
 }) {
+  const { locale, t } = useLocale();
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [focusedPhase, setFocusedPhase] = useState<"start" | "error" | "end" | null>(null);
 
@@ -453,7 +459,7 @@ function RequestCard({
                     stream && "border-info/40 text-info",
                   )}
                 >
-                  {stream ? "stream" : "sync"}
+                  {stream ? t("stream") : t("sync")}
                 </Badge>
               )}
               {accountName && accountName !== "default" && (
@@ -463,12 +469,12 @@ function RequestCard({
               )}
               {messageCount !== undefined && (
                 <Badge variant="secondary" className="px-1.5 py-0 text-[10px] tabular-nums">
-                  {messageCount} msgs
+                  {messageCount} {t("messages")}
                 </Badge>
               )}
               {toolCount !== undefined && toolCount > 0 && (
                 <Badge variant="secondary" className="px-1.5 py-0 text-[10px] tabular-nums">
-                  {toolCount} tools
+                  {toolCount} {t("tools")}
                 </Badge>
               )}
             </div>
@@ -486,7 +492,7 @@ function RequestCard({
             ) : (
               <Badge variant="info" className="gap-1 px-2 py-0.5 text-[11px] font-semibold">
                 <Loader2 className="size-3 animate-spin" />
-                IN PROGRESS
+                {t("inProgress")}
               </Badge>
             )}
           </div>
@@ -500,7 +506,7 @@ function RequestCard({
               <button
                 type="button"
                 onClick={() => setFocusedPhase(focusedPhase === "start" ? null : "start")}
-                aria-label="View request start details"
+                aria-label={t("viewRequestStart")}
                 aria-expanded={focusedPhase === "start"}
                 className={cn(
                   "flex items-center justify-center min-h-11 min-w-11 cursor-pointer transition-shadow",
@@ -518,7 +524,7 @@ function RequestCard({
                 </span>
               </button>
               <span className="mt-1 text-[10px] text-muted-foreground tabular-nums whitespace-nowrap">
-                {startEvent ? formatTime(startEvent.ts) : "—"}
+                {startEvent ? formatTime(startEvent.ts, locale) : "—"}
               </span>
             </div>
 
@@ -549,7 +555,7 @@ function RequestCard({
                 )}
                 {isInProgress && (
                   <span className="rounded bg-background px-1 text-[10px] text-muted-foreground">
-                    waiting...
+                    {t("waiting")}
                   </span>
                 )}
               </div>
@@ -557,7 +563,7 @@ function RequestCard({
               {inputTokens !== undefined && outputTokens !== undefined && (
                 <div className="absolute inset-x-0 top-3 flex items-center justify-center">
                   <span className="rounded bg-background px-1 text-[10px] tabular-nums text-muted-foreground">
-                    input {formatTokens(inputTokens)} &middot; output {formatTokens(outputTokens)} &middot; total {formatTokens(inputTokens + outputTokens)}
+                    {t("inputOutputTotal").replace("{input}", formatTokens(inputTokens)).replace("{output}", formatTokens(outputTokens)).replace("{total}", formatTokens(inputTokens + outputTokens))}
                   </span>
                 </div>
               )}
@@ -570,7 +576,7 @@ function RequestCard({
                   <button
                     type="button"
                     onClick={() => setFocusedPhase(focusedPhase === "error" ? null : "error")}
-                    aria-label="View upstream error details"
+                    aria-label={t("viewUpstreamError")}
                     aria-expanded={focusedPhase === "error"}
                     className={cn(
                       "flex items-center justify-center min-h-11 min-w-11 cursor-pointer transition-shadow",
@@ -600,7 +606,7 @@ function RequestCard({
                 <button
                   type="button"
                   onClick={() => setFocusedPhase(focusedPhase === "end" ? null : "end")}
-                  aria-label={isError ? "View request error details" : "View request completion details"}
+                  aria-label={isError ? t("viewRequestError") : t("viewRequestCompletion")}
                   aria-expanded={focusedPhase === "end"}
                   className={cn(
                     "flex items-center justify-center min-h-11 min-w-11 cursor-pointer transition-shadow",
@@ -630,7 +636,7 @@ function RequestCard({
                 "mt-1 text-[10px] tabular-nums whitespace-nowrap",
                 isError ? "text-destructive" : isComplete ? "text-muted-foreground" : "text-muted-foreground/50",
               )}>
-                {endEvent ? formatTime(endEvent.ts) : "pending"}
+                {endEvent ? formatTime(endEvent.ts, locale) : t("pending")}
               </span>
             </div>
           </div>
@@ -672,7 +678,7 @@ function RequestCard({
               className="flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] text-muted-foreground hover:bg-background/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
             >
               {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-              {events.length} raw events
+              {events.length} {t("rawEvents")}
               {startEvent?.requestId && (
                 <span className="ml-auto font-mono text-[10px] opacity-50">
                   {startEvent.requestId.slice(0, 8)}
@@ -696,11 +702,12 @@ function RequestCard({
 
 /** Compact single-line raw event for expanded detail view */
 function RawEventLine({ event }: { event: LogEvent }) {
+  const { locale } = useLocale();
   const badge = getRawBadge(event);
   return (
     <div className="flex items-start gap-2 font-mono text-[11px] leading-5">
       <span className="shrink-0 text-muted-foreground tabular-nums">
-        {formatTime(event.ts)}
+        {formatTime(event.ts, locale)}
       </span>
       <Badge variant={badge.variant} className="shrink-0 px-1 py-0 text-[9px]">
         {badge.label}
@@ -754,6 +761,7 @@ function EventGroup({
 // ---------------------------------------------------------------------------
 
 export function LogsContent() {
+  const { t } = useLocale();
   const searchParams = useSearchParams();
   const requestIdFilter = searchParams.get("requestId") ?? undefined;
   const [level, setLevel] = useState<LogLevel>("info");
@@ -885,12 +893,12 @@ export function LogsContent() {
       {/* Header */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 md:gap-3">
         <div className="flex items-center gap-3">
-          <h1 className="text-display">Logs</h1>
+          <h1 className="text-display">{t("logs")}</h1>
           <ConnectionIndicator connected={connected} />
         </div>
         <div className="flex items-center gap-2">
           <Input
-            placeholder="Search..."
+            placeholder={t("search")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="h-8 w-28 md:w-48 text-xs"
@@ -901,17 +909,17 @@ export function LogsContent() {
             size="sm"
             className="h-8 gap-1"
             onClick={() => setPaused(!paused)}
-            title={paused ? "Resume" : "Pause"}
+            title={paused ? t("resume") : t("pause")}
           >
             {paused ? (
               <>
                 <Play className="size-3" />
-                <span className="hidden sm:inline">Resume</span>
+                <span className="hidden sm:inline">{t("resume")}</span>
               </>
             ) : (
               <>
                 <Pause className="size-3" />
-                <span className="hidden sm:inline">Pause</span>
+                <span className="hidden sm:inline">{t("pause")}</span>
               </>
             )}
           </Button>
@@ -920,10 +928,10 @@ export function LogsContent() {
             size="sm"
             className="h-8 gap-1"
             onClick={clear}
-            title="Clear"
+            title={t("clear")}
           >
             <Trash2 className="size-3" />
-            <span className="hidden sm:inline">Clear</span>
+            <span className="hidden sm:inline">{t("clear")}</span>
           </Button>
         </div>
       </div>
@@ -932,7 +940,7 @@ export function LogsContent() {
       {paused && (
         <div className="flex shrink-0 items-center gap-2 rounded-md bg-warning/10 px-3 py-1.5 text-xs text-warning">
           <Pause className="size-3" />
-          Paused — new events are being buffered
+          {t("pausedBuffering")}
         </div>
       )}
 
@@ -951,8 +959,8 @@ export function LogsContent() {
             {groups.length === 0 ? (
               <div className="flex h-32 items-center justify-center rounded-md bg-secondary text-sm text-muted-foreground">
                 {connected
-                  ? "Waiting for log events..."
-                  : "Connecting to log stream..."}
+                  ? t("waitingForEvents")
+                  : t("connectingToStream")}
               </div>
             ) : (
               <div className="space-y-2 pb-2">
@@ -974,7 +982,7 @@ export function LogsContent() {
               type="button"
               onClick={scrollToTop}
               className="absolute bottom-4 right-4 flex items-center justify-center size-10 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-all hover:scale-105 active:scale-95"
-              title="Back to latest"
+              title={t("backToLatest")}
             >
               <Rocket className="size-4" />
             </button>
@@ -983,10 +991,10 @@ export function LogsContent() {
           {/* Footer status */}
           <div className="flex shrink-0 items-center justify-between pt-2 text-meta">
             <span>
-              {filteredEvents.length} events
-              {search && ` (filtered from ${events.length})`}
+              {filteredEvents.length} {t("events")}
+              {search && ` (${t("filteredFrom")} ${events.length})`}
             </span>
-            <span>{relativeTime(events[events.length - 1]?.ts ?? Date.now())}</span>
+            <span>{relativeTime(events[events.length - 1]?.ts ?? Date.now(), t)}</span>
           </div>
         </div>
       </div>
