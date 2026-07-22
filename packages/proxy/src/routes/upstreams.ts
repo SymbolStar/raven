@@ -114,7 +114,7 @@ function checkModelConflicts(
 }
 
 function copilotConflictCatalogRequired(): boolean {
-  return process.env.RAVEN_DISABLE_COPILOT !== "true"
+  return process.env.RAVEN_DISABLE_COPILOT === "false"
 }
 
 /**

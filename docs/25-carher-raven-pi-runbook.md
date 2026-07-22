@@ -52,7 +52,7 @@ Key code paths:
 | `core/router.ts` | Routes Responses requests to an OpenAI-format custom provider rather than rejecting them. |
 | `routes/responses/handler.ts` | Resolves the matched provider and dispatches its original payload to the new strategy. |
 | Dashboard connection info | Publishes and displays `/v1/responses`. |
-| `RAVEN_DISABLE_COPILOT` | Starts Raven with custom providers only when GitHub Copilot initialization is unavailable. |
+| `RAVEN_DISABLE_COPILOT` | Defaults to custom providers only. Set it to `false` only when GitHub Copilot is required. |
 
 The detailed feature design is in [CarHer Responses Gateway](./24-carher-responses-gateway.md).
 
@@ -101,7 +101,6 @@ avoids a GitHub/Copilot token refresh failure affecting an unrelated provider.
 cd /Users/fujindong/symbolstar/raven
 
 RAVEN_PORT=7025 \
-RAVEN_DISABLE_COPILOT=true \
 RAVEN_API_KEY='<local-raven-api-key>' \
 RAVEN_INTERNAL_KEY='<dashboard-internal-key>' \
 bun run --filter @raven/proxy start
@@ -240,8 +239,8 @@ upstream: CarHer Pro
 
 | Symptom | Meaning and fix |
 | --- | --- |
-| `Failed to get Copilot token` | For CarHer-only use, add `RAVEN_DISABLE_COPILOT=true`. |
-| GitHub `502 Unicorn` at startup | Same as above; this is a Copilot/GitHub initialization issue, not CarHer. |
+| `Failed to get Copilot token` | Ensure `RAVEN_DISABLE_COPILOT` is unset or `true`. Copilot is disabled by default. |
+| GitHub `502 Unicorn` at startup | Ensure `RAVEN_DISABLE_COPILOT` is unset or `true`; this is a Copilot/GitHub initialization issue, not CarHer. |
 | Provider save returns `503 Service Unavailable` in CarHer-only mode | Restart Raven with the current code. Custom-provider-only mode now skips the unavailable Copilot catalog check while retaining custom-provider conflict checks. |
 | Pi says stream ended before terminal response event | Restart Raven with the current `custom-responses` compatibility fix, then retry. |
 | Pi shows `/128k` | Restart Pi after confirming `contextWindow` is `353000` in `~/.pi/agent/models.json`. |

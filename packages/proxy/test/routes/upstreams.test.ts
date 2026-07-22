@@ -521,21 +521,28 @@ describe("upstreams API", () => {
   describe("when Copilot models are not loaded", () => {
     test("POST returns 503 when state.models is null", async () => {
       const app = makeApp(db)
+      const previous = process.env.RAVEN_DISABLE_COPILOT
+      process.env.RAVEN_DISABLE_COPILOT = "false"
 
       // Set state.models to null
       state.models = null
 
-      const res = await app.request(req("POST", "/api/upstreams", {
-        name: "TestProvider",
-        base_url: "https://example.com",
-        format: "anthropic",
-        api_key: "sk-test-key",
-        model_patterns: ["test-model"],
-      }))
+      try {
+        const res = await app.request(req("POST", "/api/upstreams", {
+          name: "TestProvider",
+          base_url: "https://example.com",
+          format: "anthropic",
+          api_key: "sk-test-key",
+          model_patterns: ["test-model"],
+        }))
 
-      expect(res.status).toBe(503)
-      const json = await res.json() as { error: { type: string } }
-      expect(json.error.type).toBe("service_unavailable")
+        expect(res.status).toBe(503)
+        const json = await res.json() as { error: { type: string } }
+        expect(json.error.type).toBe("service_unavailable")
+      } finally {
+        if (previous === undefined) delete process.env.RAVEN_DISABLE_COPILOT
+        else process.env.RAVEN_DISABLE_COPILOT = previous
+      }
     })
 
     test("POST allows custom-provider-only mode without a Copilot catalog", async () => {
@@ -560,28 +567,35 @@ describe("upstreams API", () => {
 
     test("PUT returns 503 when updating model_patterns and state.models is null", async () => {
       const app = makeApp(db)
+      const previous = process.env.RAVEN_DISABLE_COPILOT
+      process.env.RAVEN_DISABLE_COPILOT = "false"
 
-      // Create a provider first (with models loaded)
-      const createRes = await app.request(req("POST", "/api/upstreams", {
-        name: "TestProvider",
-        base_url: "https://example.com",
-        format: "anthropic",
-        api_key: "sk-test-key",
-        model_patterns: ["test-model"],
-      }))
-      const created = await createRes.json() as { id: string }
+      try {
+        // Create a provider first (with models loaded)
+        const createRes = await app.request(req("POST", "/api/upstreams", {
+          name: "TestProvider",
+          base_url: "https://example.com",
+          format: "anthropic",
+          api_key: "sk-test-key",
+          model_patterns: ["test-model"],
+        }))
+        const created = await createRes.json() as { id: string }
 
-      // Set state.models to null
-      state.models = null
+        // Set state.models to null
+        state.models = null
 
-      // Try to update model_patterns
-      const res = await app.request(req("PUT", `/api/upstreams/${created.id}`, {
-        model_patterns: ["new-model"],
-      }))
+        // Try to update model_patterns
+        const res = await app.request(req("PUT", `/api/upstreams/${created.id}`, {
+          model_patterns: ["new-model"],
+        }))
 
-      expect(res.status).toBe(503)
-      const json = await res.json() as { error: { type: string } }
-      expect(json.error.type).toBe("service_unavailable")
+        expect(res.status).toBe(503)
+        const json = await res.json() as { error: { type: string } }
+        expect(json.error.type).toBe("service_unavailable")
+      } finally {
+        if (previous === undefined) delete process.env.RAVEN_DISABLE_COPILOT
+        else process.env.RAVEN_DISABLE_COPILOT = previous
+      }
     })
 
     test("PUT succeeds when updating other fields without model_patterns", async () => {

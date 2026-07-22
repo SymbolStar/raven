@@ -13,6 +13,7 @@ describe("loadConfig", () => {
     delete process.env.RAVEN_TOKEN_PATH;
     delete process.env.RAVEN_DB_PATH;
     delete process.env.RAVEN_LOG_LEVEL;
+    delete process.env.RAVEN_DISABLE_COPILOT;
     delete process.env.RAVEN_CONFIG_DIR;
     delete process.env.RAVEN_DATA_DIR;
   });
@@ -23,6 +24,7 @@ describe("loadConfig", () => {
     expect(config.port).toBe(7024);
     expect(config.apiKey).toBe("");
     expect(config.logLevel).toBe("info");
+    expect(config.disableCopilot).toBe(true);
 
     // Paths should be platform-aware and absolute
     const expectedConfigDir = getConfigDir();
@@ -48,6 +50,12 @@ describe("loadConfig", () => {
     expect(config.tokenPath).toBe("/tmp/token");
     expect(config.dbPath).toBe("data/raven-test.db");
     expect(config.logLevel).toBe("debug");
+  });
+
+  test("enables Copilot only when explicitly requested", () => {
+    process.env.RAVEN_DISABLE_COPILOT = "false";
+
+    expect(loadConfig().disableCopilot).toBe(false);
   });
 
   test("RAVEN_CONFIG_DIR overrides default token path", () => {
