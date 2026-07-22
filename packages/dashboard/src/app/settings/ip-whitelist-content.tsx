@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useLocale } from "@/components/locale-provider";
 import type { IPWhitelistInfo } from "@/lib/types";
 
 interface IPWhitelistContentProps {
@@ -14,6 +15,7 @@ interface IPWhitelistContentProps {
 }
 
 export function IPWhitelistContent({ data }: IPWhitelistContentProps) {
+  const { t } = useLocale();
   const router = useRouter();
   const [enabled, setEnabled] = useState(data.enabled);
   const [trustProxy, setTrustProxy] = useState(data.trust_proxy);
@@ -113,12 +115,12 @@ export function IPWhitelistContent({ data }: IPWhitelistContentProps) {
     const trimmed = newRange.trim();
     if (!trimmed) return;
     if (ranges.includes(trimmed)) {
-      setError("This range already exists");
+      setError(t("duplicateRange"));
       return;
     }
     setNewRange("");
     saveRanges([...ranges, trimmed]);
-  }, [newRange, ranges, saveRanges]);
+  }, [newRange, ranges, saveRanges, t]);
 
   const handleRemoveRange = useCallback(
     (index: number) => {
@@ -141,11 +143,10 @@ export function IPWhitelistContent({ data }: IPWhitelistContentProps) {
   return (
     <section>
       <h2 className="text-sm font-medium text-muted-foreground mb-3">
-        IP Whitelist
+        {t("ipWhitelist")}
       </h2>
       <p className="text-xs text-muted-foreground mb-4">
-        Restrict access to the proxy by client IP address. Non-whitelisted IPs
-        receive a silent 403 response.
+        {t("ipWhitelistDescription")}
       </p>
 
       <div className="rounded-card bg-secondary p-4 space-y-4">
@@ -153,7 +154,7 @@ export function IPWhitelistContent({ data }: IPWhitelistContentProps) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Shield className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Enable IP whitelist</span>
+            <span className="text-sm font-medium">{t("enableIpWhitelist")}</span>
           </div>
           <Switch
             checked={enabled}
@@ -167,11 +168,10 @@ export function IPWhitelistContent({ data }: IPWhitelistContentProps) {
           <div className="flex items-center justify-between">
             <div className="flex-1 min-w-0">
               <Label className="text-sm font-medium cursor-pointer">
-                Trust proxy headers
+                {t("trustProxyHeaders")}
               </Label>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Read client IP from X-Forwarded-For / X-Real-IP headers.
-                Only enable if behind a trusted reverse proxy (nginx, Cloudflare, etc).
+                {t("trustProxyDescription")}
               </p>
             </div>
             <Switch
@@ -184,8 +184,7 @@ export function IPWhitelistContent({ data }: IPWhitelistContentProps) {
             <div className="flex items-start gap-2 text-amber-500">
               <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
               <p className="text-xs">
-                Warning: When enabled, clients can spoof their IP via headers
-                unless your proxy strips and rewrites them.
+                {t("trustProxyWarning")}
               </p>
             </div>
           )}
@@ -194,8 +193,7 @@ export function IPWhitelistContent({ data }: IPWhitelistContentProps) {
         {/* IP ranges list */}
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground">
-            Supported formats: single IP (192.168.1.1), CIDR (192.168.1.0/24),
-            or range (192.168.1.1-192.168.1.100)
+            {t("supportedIpFormats")}
           </p>
 
           {/* Existing ranges */}
@@ -243,7 +241,7 @@ export function IPWhitelistContent({ data }: IPWhitelistContentProps) {
               ) : (
                 <Plus className="h-3 w-3" />
               )}
-              <span className="ml-1.5">Add</span>
+              <span className="ml-1.5">{t("add")}</span>
             </Button>
           </div>
         </div>
@@ -252,10 +250,10 @@ export function IPWhitelistContent({ data }: IPWhitelistContentProps) {
 
         {/* Anti-lockout notice */}
         <div className="text-xs text-muted-foreground border-t border-border/30 pt-3">
-          <p className="font-medium mb-1">Anti-lockout behavior:</p>
+          <p className="font-medium mb-1">{t("antiLockout")}</p>
           <ul className="list-disc list-inside space-y-0.5 ml-1">
-            <li>If no ranges are configured, all IPs are allowed</li>
-            <li>If client IP cannot be determined, access is allowed</li>
+            <li>{t("emptyRangesAllowed")}</li>
+            <li>{t("unknownClientIpAllowed")}</li>
           </ul>
         </div>
       </div>

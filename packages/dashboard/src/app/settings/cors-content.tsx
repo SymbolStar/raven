@@ -6,6 +6,7 @@ import { Globe, Plus, Trash2, Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useLocale } from "@/components/locale-provider";
 import type { CorsInfo } from "@/lib/types";
 
 interface CorsContentProps {
@@ -13,6 +14,7 @@ interface CorsContentProps {
 }
 
 export function CorsContent({ data }: CorsContentProps) {
+  const { t } = useLocale();
   const router = useRouter();
   const [enabled, setEnabled] = useState(data.enabled);
   const [origins, setOrigins] = useState<string[]>(data.allowed_origins);
@@ -85,21 +87,21 @@ export function CorsContent({ data }: CorsContentProps) {
     try {
       const url = new URL(trimmed);
       if (url.protocol !== "http:" && url.protocol !== "https:") {
-        setError("Invalid URL — must be http:// or https://");
+        setError(t("invalidOriginUrl"));
         return;
       }
       normalized = url.origin;
     } catch {
-      setError("Invalid URL — must be http:// or https://");
+      setError(t("invalidOriginUrl"));
       return;
     }
     if (origins.includes(normalized)) {
-      setError("This origin already exists");
+      setError(t("duplicateOrigin"));
       return;
     }
     setNewOrigin("");
     saveOrigins([...origins, normalized]);
-  }, [newOrigin, origins, saveOrigins]);
+  }, [newOrigin, origins, saveOrigins, t]);
 
   const handleRemoveOrigin = useCallback(
     (index: number) => {
@@ -122,10 +124,10 @@ export function CorsContent({ data }: CorsContentProps) {
   return (
     <section>
       <h2 className="text-sm font-medium text-muted-foreground mb-3">
-        CORS Allowed Origins
+        {t("corsAllowedOrigins")}
       </h2>
       <p className="text-xs text-muted-foreground mb-4">
-        Control which origins can make cross-origin requests to the proxy.
+        {t("corsDescription")}
       </p>
 
       <div className="rounded-card bg-secondary p-4 space-y-4">
@@ -133,7 +135,7 @@ export function CorsContent({ data }: CorsContentProps) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Globe className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Enable CORS restrictions</span>
+            <span className="text-sm font-medium">{t("enableCorsRestrictions")}</span>
           </div>
           <Switch
             checked={enabled}
@@ -145,7 +147,7 @@ export function CorsContent({ data }: CorsContentProps) {
         {/* Origins list */}
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground">
-            Add allowed origins (e.g., http://localhost:3000, https://app.example.com)
+            {t("addAllowedOrigins")}
           </p>
 
           {/* Existing origins */}
@@ -193,7 +195,7 @@ export function CorsContent({ data }: CorsContentProps) {
               ) : (
                 <Plus className="h-3 w-3" />
               )}
-              <span className="ml-1.5">Add</span>
+              <span className="ml-1.5">{t("add")}</span>
             </Button>
           </div>
         </div>
@@ -203,8 +205,7 @@ export function CorsContent({ data }: CorsContentProps) {
         {/* Info notice */}
         <div className="text-xs text-muted-foreground border-t border-border/30 pt-3">
           <p>
-            When disabled or the allowed origins list is empty, all origins are
-            allowed (default behavior).
+            {t("corsEmptyAllowed")}
           </p>
         </div>
       </div>

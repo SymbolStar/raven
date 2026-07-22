@@ -5,32 +5,31 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { useLocale } from "@/components/locale-provider";
+import type { MessageKey } from "@/lib/locale";
 import type { OptimizationInfo } from "@/lib/types";
 
 // ── Optimization item definitions ──
 
 const OPTIMIZATION_ITEMS: Array<{
   id: string;
-  label: string;
-  description: string;
+  label: MessageKey;
+  description: MessageKey;
 }> = [
   {
     id: "sanitize_orphaned_tool_results",
-    label: "Sanitize Orphaned Tool Results",
-    description:
-      "Drop tool_result blocks referencing non-existent tool_use IDs after client-side compaction.",
+    label: "sanitizeOrphanedToolResults",
+    description: "sanitizeOrphanedToolResultsDescription",
   },
   {
     id: "reorder_tool_results",
-    label: "Reorder Tool Results",
-    description:
-      "Reorder parallel tool results to match the tool_calls array order expected by upstream.",
+    label: "reorderToolResults",
+    description: "reorderToolResultsDescription",
   },
   {
     id: "filter_whitespace_chunks",
-    label: "Filter Whitespace-Only Chunks",
-    description:
-      "Skip streaming chunks with whitespace-only content that cause blank lines in some clients.",
+    label: "filterWhitespaceChunks",
+    description: "filterWhitespaceChunksDescription",
   },
 ];
 
@@ -41,14 +40,14 @@ interface OptimizationsContentProps {
 }
 
 export function OptimizationsContent({ data }: OptimizationsContentProps) {
+  const { t } = useLocale();
   return (
     <section>
       <h2 className="text-sm font-medium text-muted-foreground mb-3">
-        Optimizations
+        {t("optimizations")}
       </h2>
       <p className="text-xs text-muted-foreground mb-4">
-        Protocol-level fixes from upstream compatibility research. Enable
-        individually as needed.
+        {t("optimizationsDescription")}
       </p>
       <div className="grid gap-3">
         {OPTIMIZATION_ITEMS.map((item) => {
@@ -76,6 +75,7 @@ function OptimizationRow({
   item: (typeof OPTIMIZATION_ITEMS)[number];
   info: OptimizationInfo;
 }) {
+  const { t } = useLocale();
   const router = useRouter();
   const [enabled, setEnabled] = useState(info.enabled);
   const [saving, setSaving] = useState(false);
@@ -125,10 +125,10 @@ function OptimizationRow({
             htmlFor={`opt-${item.id}`}
             className="text-sm font-medium cursor-pointer"
           >
-            {item.label}
+            {t(item.label)}
           </Label>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {item.description}
+            {t(item.description)}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
