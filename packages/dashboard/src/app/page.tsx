@@ -1,20 +1,19 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { Activity, Zap, Clock, AlertTriangle, Timer, Gauge } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
-import { StatCard } from "@/components/stats/stat-card";
 import { FetchError } from "@/components/fetch-error";
 import { FilterBar } from "@/components/analytics/filter-bar";
 import { AnalyticsCharts } from "./analytics-charts";
 import { SentinelStatusPanel } from "./sentinel-status-panel";
 import { safeFetch } from "@/lib/proxy";
 import type { SummaryStats, ExtendedTimeseriesBucket, BreakdownEntry, Percentiles } from "@/lib/types";
-import { formatCompact, formatLatency, formatPercent } from "@/lib/chart-config";
 import {
   searchParamsToFilters,
   filtersToApiQuery,
   rangeToInterval,
 } from "@/lib/analytics-filters";
+import { OverviewHeader } from "./overview-header";
+import { OverviewStats } from "./overview-stats";
 
 export const metadata: Metadata = { title: "Overview" };
 
@@ -75,12 +74,7 @@ export default async function HomePage({ searchParams }: PageProps) {
     <AppShell>
       <div className="space-y-5 md:space-y-7">
         {/* Page header */}
-        <div className="flex flex-col gap-1">
-          <h1 className="text-display">Overview</h1>
-          <p className="text-meta">
-            Live analytics across all proxied requests, models, and clients.
-          </p>
-        </div>
+        <OverviewHeader />
 
         {/* Filter Bar */}
         <Suspense>
@@ -88,49 +82,7 @@ export default async function HomePage({ searchParams }: PageProps) {
         </Suspense>
 
         {/* Stat cards row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4">
-          <StatCard
-            icon={Activity}
-            label="Total Requests"
-            value={formatCompact(summary.total_requests)}
-            sparkline={requestsSpark}
-            className="animate-fade-up stagger-1"
-          />
-          <StatCard
-            icon={AlertTriangle}
-            label="Error Rate"
-            value={formatPercent(summary.error_rate)}
-            detail={`${summary.error_count} errors`}
-            accent={summary.error_rate > 0.05 ? "danger" : "default"}
-            className="animate-fade-up stagger-2"
-          />
-          <StatCard
-            icon={Clock}
-            label="Avg Latency"
-            value={formatLatency(summary.avg_latency_ms)}
-            sparkline={latencySpark}
-            className="animate-fade-up stagger-3"
-          />
-          <StatCard
-            icon={Gauge}
-            label="P95 Latency"
-            value={p95 ? formatLatency(p95.p95) : "—"}
-            className="animate-fade-up stagger-4"
-          />
-          <StatCard
-            icon={Timer}
-            label="Avg TTFT"
-            value={summary.avg_ttft_ms != null ? formatLatency(summary.avg_ttft_ms) : "—"}
-            className="animate-fade-up stagger-5"
-          />
-          <StatCard
-            icon={Zap}
-            label="Total Tokens"
-            value={formatCompact(summary.total_tokens)}
-            sparkline={tokensSpark}
-            className="animate-fade-up stagger-6"
-          />
-        </div>
+        <OverviewStats summary={summary} p95={p95} requestsSpark={requestsSpark} tokensSpark={tokensSpark} latencySpark={latencySpark} />
 
         {/* Analytics charts */}
         <AnalyticsCharts
